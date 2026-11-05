@@ -7,8 +7,15 @@ import { useTheme, type Theme } from './theme';
 /** The page background: the user's photo (and its veil), or null for the default ambient colours. */
 export const BackgroundContext = createContext<{ uri: string | null; dim: number }>({ uri: null, dim: 0.5 });
 
-// Frosted surfaces blur this much of the photo behind them.
-export const FROST_BLUR = 28;
+/**
+ * How the glass looks, adjustable in settings: panel fill opacity, how much the
+ * photo behind glass is blurred, how strongly cards are tinted, and the soft
+ * light glow along glass edges.
+ */
+export type GlassLook = { panel: number; blur: number; card: number; glow: boolean };
+export const DEFAULT_GLASS: GlassLook = { panel: 0.3, blur: 12, card: 0.4, glow: true };
+export const GlassContext = createContext<GlassLook>(DEFAULT_GLASS);
+export const useGlass = () => useContext(GlassContext);
 
 const BLOBS: Record<'light' | 'dark', { color: string; x: number; y: number; r: number; o: number }[]> = {
   light: [
@@ -73,16 +80,23 @@ export function useScreenOffset() {
 }
 
 /** The blurred background, positioned so it lines up with the screen behind a surface at `offset`. */
-export function Backdrop({ offset, blur = FROST_BLUR }: { offset: { x: number; y: number }; blur?: number }) {
+export function Backdrop({ offset, blur }: { offset: { x: number; y: number }; blur?: number }) {
   const { width, height } = useWindowDimensions();
+  const look = useGlass();
   return <View pointerEvents="none" style={{ position: 'absolute', left: -offset.x, top: -offset.y, width, height }}>
-    <AppBackground blur={blur} />
+    <AppBackground blur={blur ?? look.blur} />
   </View>;
 }
 
-export const frost = (theme: Theme, strong = false) => theme.dark
-  ? { fill: strong ? 'rgba(27,32,44,0.78)' : 'rgba(30,36,50,0.52)', rim: 'rgba(255,255,255,0.13)', shadow: '0 8px 24px rgba(0,0,0,0.32)' }
-  : { fill: strong ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.56)', rim: 'rgba(255,255,255,0.8)', shadow: '0 8px 24px rgba(40,55,110,0.10)' };
+export function frost(theme: Theme, strong = false, look: GlassLook = DEFAULT_GLASS) {
+  // Strong surfaces (the timetable grid) stay more opaque so dense text is readable.
+  const alpha = Math.round((strong ? Math.min(0.86, look.panel + 0.38) : look.panel) * 100) / 100;
+  return theme.dark
+    ? { fill: `rgba(30,36,50,${alpha})`, rim: look.glow ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.13)',
+      shadow: look.glow ? '0 8px 24px rgba(0,0,0,0.30), 0 0 18px rgba(150,170,255,0.16)' : '0 8px 24px rgba(0,0,0,0.32)' }
+    : { fill: `rgba(255,255,255,${alpha})`, rim: look.glow ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.75)',
+      shadow: look.glow ? '0 8px 24px rgba(40,55,110,0.08), 0 0 18px rgba(255,255,255,0.55)' : '0 8px 24px rgba(40,55,110,0.10)' };
+}
 
 /**
  * Frosted-glass layer for any rounded surface: drop it in as the first child.
@@ -93,10 +107,11 @@ export function GlassFill({ radius, strong = false }: { radius: number; strong?:
   const theme = useTheme();
   const { uri } = useContext(BackgroundContext);
   const { reduceTransparency } = useAccessibility();
+  const look = useGlass();
   const { ref, onLayout, offset } = useScreenOffset();
   if (!uri || reduceTransparency) return null;
   return <View ref={ref} onLayout={onLayout} pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]}>
     <Backdrop offset={offset} />
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: frost(theme, strong).fill }]} />
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: frost(theme, strong, look).fill }]} />
   </View>;
 }

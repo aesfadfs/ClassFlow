@@ -9,15 +9,24 @@ export type Appearance = {
   cardImages: Record<string, string>;    // `entry:<id>` (one item) or `title:<name>` (every session of a course)
   cardFrost: Record<string, true>;       // same keys: draw a frosted layer over that picture
   greeting: boolean;                     // greeting curtain when the app opens
+  glassPanel: number;                    // panel fill opacity (lower = more see-through)
+  glassBlur: number;                     // blur of the background behind glass, in px
+  glassCard: number;                     // tint opacity of the home cards
+  glow: boolean;                         // soft light along glass edges
   dragEnabled: boolean;                  // drag / resize in the detailed timetable
   haptics: boolean;
 };
 
 export type CardImageScope = 'entry' | 'title';
 export const APPEARANCE_KEY = 'classflow.appearance.v1';
-export const DIM_LEVELS = [{ value: 0.25, title: '浅' }, { value: 0.5, title: '中' }, { value: 0.7, title: '深' }];
+export const DIM_LEVELS = [{ value: 0, title: '无' }, { value: 0.25, title: '浅' }, { value: 0.5, title: '中' }, { value: 0.7, title: '深' }];
+// Choices offered in settings; the first value of each is the most see-through.
+export const PANEL_LEVELS = [{ value: 0.16, title: '通透' }, { value: 0.3, title: '适中' }, { value: 0.55, title: '朦胧' }];
+export const BLUR_LEVELS = [{ value: 0, title: '无' }, { value: 6, title: '轻' }, { value: 12, title: '中' }, { value: 24, title: '重' }];
+export const CARD_LEVELS = [{ value: 0.22, title: '通透' }, { value: 0.4, title: '适中' }, { value: 0.68, title: '浓郁' }];
+const allowed = (levels: { value: number }[], value: unknown, fallback: number) => levels.some(level => level.value === value) ? value as number : fallback;
 
-export const defaultAppearance = (): Appearance => ({ version: 1, background: null, backgroundDim: 0.5, cardImages: {}, cardFrost: {}, greeting: true, dragEnabled: true, haptics: true });
+export const defaultAppearance = (): Appearance => ({ version: 1, background: null, backgroundDim: 0.25, cardImages: {}, cardFrost: {}, greeting: true, glassPanel: 0.3, glassBlur: 12, glassCard: 0.4, glow: true, dragEnabled: true, haptics: true });
 
 export const cardImageKey = (scope: CardImageScope, entry: Pick<Entry, 'id' | 'title'>) => scope === 'entry' ? `entry:${entry.id}` : `title:${entry.title.trim()}`;
 
@@ -76,6 +85,10 @@ export function restoreAppearance(raw: string | null): Appearance {
       cardImages,
       cardFrost,
       greeting: typeof value.greeting === 'boolean' ? value.greeting : true,
+      glassPanel: allowed(PANEL_LEVELS, value.glassPanel, base.glassPanel),
+      glassBlur: allowed(BLUR_LEVELS, value.glassBlur, base.glassBlur),
+      glassCard: allowed(CARD_LEVELS, value.glassCard, base.glassCard),
+      glow: typeof value.glow === 'boolean' ? value.glow : true,
       dragEnabled: typeof value.dragEnabled === 'boolean' ? value.dragEnabled : true,
       haptics: typeof value.haptics === 'boolean' ? value.haptics : true,
     };

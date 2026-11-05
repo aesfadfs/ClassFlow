@@ -77,10 +77,22 @@ export function dayPeriod(date: Date): DayPeriod {
   return 'evening';
 }
 
-/** `random` in [0, 1) picks one line of the current period. */
-export function greetingFor(date: Date, random: number) {
+/**
+ * Curtain colours by time of day (top → bottom gradient). All are deep enough
+ * for white text: dawn blues and peaches in the morning, clear sky and warm
+ * gold at noon, amber and lavender in the afternoon, night blues at evening.
+ */
+export const CURTAIN_COLORS: Record<DayPeriod, [string, string][]> = {
+  morning: [['#4f6f99', '#9a7a8e'], ['#b0705a', '#b97a58'], ['#55786a', '#6c8a62'], ['#5d6fa8', '#6f7fb0']],
+  noon: [['#2f6f9f', '#3f84a8'], ['#9a6b24', '#a8762c'], ['#2f7f74', '#438a7c'], ['#4b5fa8', '#5b76b8']],
+  afternoon: [['#a3583f', '#ad7042'], ['#6d5a99', '#8a68a3'], ['#4a7486', '#5d8488'], ['#9b4f63', '#a86662']],
+  evening: [['#262d4f', '#4f3f6e'], ['#1b3442', '#335f66'], ['#33283f', '#6a4460'], ['#2b2f3a', '#4d5566']],
+};
+
+const pick = <T>(items: T[], random: number) => items[Math.min(items.length - 1, Math.max(0, Math.floor(random * items.length)))];
+
+/** `random` in [0, 1) picks one line of the current period; `tone` picks its colours. */
+export function greetingFor(date: Date, random: number, tone = random) {
   const period = dayPeriod(date);
-  const lines = GREETINGS[period];
-  const index = Math.min(lines.length - 1, Math.max(0, Math.floor(random * lines.length)));
-  return { period, title: PERIOD_TITLES[period], text: lines[index] };
+  return { period, title: PERIOD_TITLES[period], text: pick(GREETINGS[period], random), colors: pick(CURTAIN_COLORS[period], tone) };
 }

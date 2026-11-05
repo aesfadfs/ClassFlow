@@ -147,7 +147,9 @@ test('appearance keeps per-item and per-course card pictures apart and restores 
   assert.deepEqual([...referencedImages({ ...look, background: 'data:image/jpeg;base64,AA' })].length, 3);
   const restored = restoreAppearance(JSON.stringify({ ...look, dragEnabled: false, backgroundDim: 9, cardImages: { ...look.cardImages, bad: 'x', 'entry:z': 'javascript:alert(1)' } }));
   assert.equal(restored.dragEnabled, false);
-  assert.equal(restored.backgroundDim, 0.5);
+  assert.equal(restored.backgroundDim, 0.25);
+  const odd = restoreAppearance(JSON.stringify({ glassPanel: 0.99, glassBlur: 6, glassCard: 'x', glow: false }));
+  assert.deepEqual([odd.glassPanel, odd.glassBlur, odd.glassCard, odd.glow], [0.3, 6, 0.4, false]);
   assert.deepEqual(Object.keys(restored.cardImages).sort(), ['entry:m2', 'title:高等数学 A']);
   assert.deepEqual(restored.cardFrost, { 'entry:m2': true });
   assert.equal(restored.greeting, true);
@@ -174,6 +176,17 @@ test('opening greeting follows the time of day and always has a line', async () 
   assert.equal(greetingFor(at(8), 0.999999).text, GREETINGS.morning.at(-1));
   assert.equal(greetingFor(at(12), 1).text, GREETINGS.noon.at(-1));
   assert.equal(greetingFor(at(20), 0.5).title, '晚上');
+  const { CURTAIN_COLORS } = await import('../src/domain/greetings.ts');
+  for (const palettes of Object.values(CURTAIN_COLORS)) {
+    assert.ok(palettes.length >= 3);
+    for (const pair of palettes) for (const color of pair) {
+      assert.match(color, /^#[0-9a-f]{6}$/);
+      // Deep enough for white text: relative luminance well below mid grey.
+      const [r, g, b] = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      assert.ok(0.2126 * r + 0.7152 * g + 0.0722 * b < 0.25, color);
+    }
+  }
+  assert.deepEqual(greetingFor(at(8), 0, 0.99).colors, CURTAIN_COLORS.morning.at(-1));
 });
 
 test('up-next stack pins cards at the top and compresses the ones behind', async () => {

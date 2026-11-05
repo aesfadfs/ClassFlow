@@ -9,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { metrics, springs, useTheme } from './theme';
-import { frost } from './glass';
+import { frost, useGlass, type GlassLook } from './glass';
 
 const AccessibilityContext = createContext({ reduceMotion: false, reduceTransparency: false });
 export const useAccessibility = () => useContext(AccessibilityContext);
@@ -113,7 +113,7 @@ export function LiquidGlass({ children, style, radius = metrics.radius.full, int
   if (!reduceTransparency && Platform.OS === 'ios' && isLiquidGlassAvailable() && isGlassEffectAPIAvailable()) {
     return <GlassView glassEffectStyle="regular" isInteractive={interactive} tintColor={accent} style={[shadow, { overflow: 'hidden' }, style]}>{children}</GlassView>;
   }
-  const fill = accent ?? (reduceTransparency ? theme.raised : theme.dark ? 'rgba(30,35,48,0.48)' : 'rgba(255,255,255,0.42)');
+  const fill = accent ?? (reduceTransparency ? theme.raised : theme.dark ? 'rgba(30,35,48,0.38)' : 'rgba(255,255,255,0.3)');
   const rim = theme.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.85)';
   return <View style={[shadow, style]}>
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]}>
@@ -198,7 +198,7 @@ export function Button({ children, onPress, icon, label, variant = 'glass', styl
   const theme = useTheme();
   const color = variant === 'primary' ? theme.onAccent : variant === 'danger' ? theme.danger : selected ? theme.blue : theme.ink;
   const { reduceTransparency } = useAccessibility();
-  const glass = frost(theme);
+  const glass = frost(theme, false, useGlass());
   const backgroundColor = variant === 'primary' ? theme.blue : variant === 'danger' ? theme.dangerBg : selected ? theme.tint : variant === 'glass' ? (reduceTransparency ? theme.raised : glass.fill) : 'transparent';
   return <PressSurface accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled, selected }} disabled={disabled}
     onPress={onPress} style={[{ flexShrink: 0, alignSelf: 'center', borderRadius: metrics.radius.md, backgroundColor, borderWidth: variant === 'glass' ? 1 : 0, borderColor: selected ? theme.accentLine : reduceTransparency ? theme.line : glass.rim }, style]}>
@@ -223,9 +223,11 @@ export function Reveal({ children, delay = 0, distance = 8, style }: { children:
   return <Animated.View style={[style, motion]}>{children}</Animated.View>;
 }
 
-export function useUI() {
+export function useUI(override?: GlassLook) {
   const theme = useTheme();
   const { reduceTransparency } = useAccessibility();
+  const context = useGlass();
+  const look = override ?? context;
   return useMemo(() => StyleSheet.create({
     row: { flexDirection: 'row', alignItems: 'center' },
     label: { fontSize: metrics.type.caption, color: theme.muted },
@@ -234,7 +236,7 @@ export function useUI() {
     pill: { borderRadius: metrics.radius.full, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: theme.tint },
     // Frosted glass by default; solid when the system asks for less transparency.
     card: reduceTransparency ? { borderRadius: metrics.radius.lg, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.line }
-      : { borderRadius: metrics.radius.lg, backgroundColor: frost(theme).fill, borderWidth: 1, borderColor: frost(theme).rim, boxShadow: frost(theme).shadow },
+      : { borderRadius: metrics.radius.lg, backgroundColor: frost(theme, false, look).fill, borderWidth: 1, borderColor: frost(theme, false, look).rim, boxShadow: frost(theme, false, look).shadow },
     solidCard: { borderRadius: metrics.radius.lg, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.line },
-  }), [theme, reduceTransparency]);
+  }), [theme, reduceTransparency, look]);
 }

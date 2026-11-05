@@ -17,7 +17,7 @@ import { cleanUpImages, pickImage } from './src/services/images';
 import { APPEARANCE_KEY, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
 import { AccessibilityProvider, BlurTargetContext, Button, Icon, LiquidGlass, PressSurface, Reveal, haptic, setHapticsEnabled, useAccessibility, useUI, type IconName } from './src/ui/primitives';
 import { metrics, springs, useTheme } from './src/ui/theme';
-import { AppBackground, BackgroundContext, GlassFill, frost } from './src/ui/glass';
+import { AppBackground, BackgroundContext, GlassContext, GlassFill, frost } from './src/ui/glass';
 import { GreetingCurtain } from './src/components/Greeting';
 
 const STORAGE_KEY = 'classflow.schedule.v1';
@@ -36,7 +36,6 @@ function ClassFlow() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const ui = useUI();
   const contentWidth = width - insets.left - insets.right;
   const mobile = contentWidth < 850 || height < 360;
   const compactHeight = height - insets.top - insets.bottom < 650;
@@ -237,6 +236,8 @@ function ClassFlow() {
     pagerPending.set(index);
     pagerPosition.set(withSpring(index, springs.page));
   };
+  const glassLook = useMemo(() => ({ panel: appearance.glassPanel, blur: appearance.glassBlur, card: appearance.glassCard, glow: appearance.glow }), [appearance.glassPanel, appearance.glassBlur, appearance.glassCard, appearance.glow]);
+  const ui = useUI(glassLook);
   const background = useMemo(() => ({ uri: appearance.background, dim: appearance.backgroundDim }), [appearance.background, appearance.backgroundDim]);
   const cardImageLookup = useCallback((entry: Entry) => cardImageFor(appearance, entry) ?? undefined, [appearance.cardImages, appearance.cardFrost]);
   const openEditor = useCallback((entry: Entry) => setEditor({ entry, isNew: false }), []);
@@ -256,7 +257,7 @@ function ClassFlow() {
     <Text accessibilityLiveRegion="polite" style={ui.body}>正在加载课表</Text>
   </View>;
 
-  return <BackgroundContext.Provider value={background}><BlurTargetContext.Provider value={blurTarget}><View style={[styles.shell, { backgroundColor: theme.bg }]}>
+  return <GlassContext.Provider value={glassLook}><BackgroundContext.Provider value={background}><BlurTargetContext.Provider value={blurTarget}><View style={[styles.shell, { backgroundColor: theme.bg }]}>
     <StatusBar barStyle={theme.dark ? 'light-content' : 'dark-content'} />
     <BlurTargetView ref={blurTarget} style={[styles.root, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
     <AppBackground testID={appearance.background ? 'custom-background' : undefined} />
@@ -345,7 +346,7 @@ function ClassFlow() {
             {weekControl}
             <Button small variant="ghost" onPress={goToday}>本周</Button>
           </View>
-          <View style={[ui.card, styles.calendar, { backgroundColor: frost(theme, true).fill }]}>
+          <View style={[ui.card, styles.calendar, { backgroundColor: frost(theme, true, glassLook).fill }]}>
             <GlassFill radius={metrics.radius.lg} strong />
             <View style={styles.detailToolbar}>
               <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
@@ -430,7 +431,7 @@ function ClassFlow() {
     {sheet === 'import' && <ImportSheet closingRequested={sheetClosing} semesterWeeks={state.preferences.semesterWeeks} existingEntries={state.entries} demo={state.demo} onClose={() => setSheet(null)} onImport={importEntries} />}
     {sheet === 'settings' && <SettingsSheet closingRequested={sheetClosing} preferences={state.preferences} onSave={savePreferences} onClose={() => setSheet(null)} onExport={writeBackup} demo={state.demo} onClearDemo={clearDemo}
       appearance={appearance} onAppearance={updateAppearance} onPickBackground={() => chooseImage('background')} />}
-  </View></BlurTargetContext.Provider></BackgroundContext.Provider>;
+  </View></BlurTargetContext.Provider></BackgroundContext.Provider></GlassContext.Provider>;
 }
 
 function Brand() {

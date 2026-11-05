@@ -10,7 +10,7 @@ import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 import { hainnu } from '../features/schools';
-import { DIM_LEVELS, type Appearance, type CardImageScope } from '../domain/appearance';
+import { BLUR_LEVELS, CARD_LEVELS, DIM_LEVELS, PANEL_LEVELS, type Appearance, type CardImageScope } from '../domain/appearance';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SchoolBrowser } from './SchoolBrowser';
 import { normalizeZhengfang, requiredSectionTimes, resolveSchoolPeriodTimes, type SectionTime, type TimetableCapture } from '../features/zhengfang';
@@ -634,6 +634,13 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
         </View>
         {!!appearance.background && <Choices<string> label="背景遮罩" value={String(appearance.backgroundDim)} onChange={value => onAppearance({ backgroundDim: Number(value) })}
           items={DIM_LEVELS.map(level => ({ key: String(level.value), title: `遮罩${level.title}` }))} />}
+        <Choices<string> label="界面透明度" value={String(appearance.glassPanel)} onChange={value => onAppearance({ glassPanel: Number(value) })}
+          items={PANEL_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
+        <Choices<string> label="雾化强度" value={String(appearance.glassBlur)} onChange={value => onAppearance({ glassBlur: Number(value) })}
+          items={BLUR_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
+        <Choices<string> label="课程卡片" value={String(appearance.glassCard)} onChange={value => onAppearance({ glassCard: Number(value) })}
+          items={CARD_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
+        <Toggle label="边缘光晕" detail="玻璃边缘带一圈柔和的光" value={appearance.glow} onChange={glow => onAppearance({ glow })} />
         <Toggle label="启动问候" detail="打开时先显示一句问候，再揭开课表；轻点可跳过" value={appearance.greeting} onChange={greeting => onAppearance({ greeting })} />
         <Toggle label="允许拖动调整课程" detail="关闭后，课表详情里的课程只能点开编辑，避免误触移动" value={appearance.dragEnabled} onChange={dragEnabled => onAppearance({ dragEnabled })} />
         <Toggle label="振动反馈" detail="切换页面、翻卡片、拖动吸附和保存时轻微振动" value={appearance.haptics} onChange={haptics => onAppearance({ haptics })} />

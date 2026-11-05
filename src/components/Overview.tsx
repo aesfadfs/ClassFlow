@@ -7,7 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { describeOccurrence, formatTime, type Entry, type Occurrence } from '../domain/schedule';
 import { haptic, Icon, PRESS_DELAY, useAccessibility, useTapGuard, useUI } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
-import { Backdrop, useScreenOffset } from '../ui/glass';
+import { Backdrop, useGlass, useScreenOffset } from '../ui/glass';
 import { STACK, anchoredIndex, settleIndex, stackPose } from '../ui/stackMath';
 
 const RATIO = 1.45;       // close to bank card proportions, a little taller for text
@@ -19,14 +19,16 @@ const GRADIENTS: Record<Entry['color'], [string, string]> = {
   orange: ['#e59a4f', '#b4612a'],
   pink: ['#de7b9d', '#a3456c'],
 };
-// Tinted glass: the same colours, translucent over the frosted background.
+// Tinted glass: the same colours as RGB, made translucent by the card setting.
 const GLASS: Record<Entry['color'], [string, string]> = {
-  blue: ['rgba(79,124,240,0.7)', 'rgba(42,71,173,0.86)'],
-  purple: ['rgba(146,119,222,0.7)', 'rgba(91,63,166,0.86)'],
-  green: ['rgba(67,160,122,0.72)', 'rgba(33,102,77,0.88)'],
-  orange: ['rgba(229,154,79,0.74)', 'rgba(180,97,42,0.88)'],
-  pink: ['rgba(222,123,157,0.72)', 'rgba(163,69,108,0.88)'],
+  blue: ['79,124,240', '42,71,173'],
+  purple: ['146,119,222', '91,63,166'],
+  green: ['67,160,122', '33,102,77'],
+  orange: ['229,154,79', '180,97,42'],
+  pink: ['222,123,157', '163,69,108'],
 };
+const glassTint = (color: Entry['color'], alpha: number): [string, string] =>
+  [`rgba(${GLASS[color][0]},${alpha})`, `rgba(${GLASS[color][1]},${Math.min(0.92, alpha + 0.16)})`];
 
 const keyOf = (item: Occurrence) => `${item.entry.id}-${item.offset}`;
 
@@ -197,6 +199,7 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
   const { reduceMotion } = useAccessibility();
   const squish = useSharedValue(1);
   const pressedAt = useRef(0);
+  const look = useGlass();
   const motion = useAnimatedStyle(() => {
     const pose = stackPose(index - position.get(), index, step);
     return { zIndex: pose.zIndex, transform: [{ translateY: pose.translateY }, { scale: pose.scale }] };
@@ -226,7 +229,7 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
     importantForAccessibility={front ? 'auto' : 'no-hide-descendants'}
     style={[styles.card, { width, height, left, transformOrigin: 'center top' }, motion]}>
     <Animated.View style={[{ flex: 1 }, press]}>
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.shadow, fade]} />
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.shadow, look.glow && glass && { boxShadow: `0 12px 28px rgba(20,30,70,0.18), 0 0 22px rgba(${GLASS[entry.color][0]},0.45)` }, fade]} />
       <Animated.View needsOffscreenAlphaCompositing style={[{ flex: 1 }, fade]}>
         <Pressable accessibilityRole="button" accessibilityLabel={`${plan ? '待办' : '课程'}，${entry.title}`} accessibilityHint="长按编辑"
           unstable_pressDelay={Platform.OS === 'web' ? undefined : PRESS_DELAY} delayLongPress={420}
@@ -238,11 +241,11 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
             {/* Frosted base: the page background, blurred and lined up with the screen, so the card reads as glass. */}
             {glass ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, backdrop]}><Backdrop offset={frame} /></Animated.View> : null}
             {image ? <>
-              <Image testID="card-image" source={{ uri: image.uri }} blurRadius={image.frost ? 18 : 0} resizeMode="cover" style={StyleSheet.absoluteFill} />
-              {image.frost && <View testID="card-frost" pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.14)' }]} />}
+              <Image testID="card-image" source={{ uri: image.uri }} blurRadius={image.frost ? Math.max(6, look.blur) : 0} resizeMode="cover" style={StyleSheet.absoluteFill} />
+              {image.frost && <View testID="card-frost" pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />}
               {/* Scrim keeps white text readable on any photo. */}
               <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.35)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0.6)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} />
-            </> : <LinearGradient pointerEvents="none" colors={glass ? GLASS[entry.color] : GRADIENTS[entry.color]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
+            </> : <LinearGradient pointerEvents="none" colors={glass ? glassTint(entry.color, look.card) : GRADIENTS[entry.color]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
             {!image && <View pointerEvents="none" style={[styles.orb, { width: height * 1.1, height: height * 1.1, borderRadius: height, right: -height * 0.45, top: -height * 0.55 }]} />}
             {!image && <View pointerEvents="none" style={[styles.orb, { width: height * 0.7, height: height * 0.7, borderRadius: height, right: height * 0.2, bottom: -height * 0.45 }]} />}
             {/* Glass sheen and rim. */}
@@ -268,7 +271,7 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
               </View>
             </Animated.View>
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.shade, shade]} />
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.rim]} />
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.rim, look.glow && styles.glow]} />
           </View>
         </Pressable>
       </Animated.View>
@@ -283,21 +286,24 @@ const styles = StyleSheet.create({
   card: { position: 'absolute', top: 0, borderRadius: metrics.radius.lg },
   shadow: { borderRadius: metrics.radius.lg, boxShadow: '0 12px 28px rgba(20,30,70,0.24)' },
   rim: { borderRadius: metrics.radius.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.42)' },
+  // Edge light: a brighter rim with a soft inner halo, like light caught in the glass edge.
+  glow: { borderColor: 'rgba(255,255,255,0.75)', boxShadow: 'inset 0 0 16px rgba(255,255,255,0.38), inset 0 1px 0 rgba(255,255,255,0.7)' },
   face: { flex: 1, borderRadius: metrics.radius.lg, overflow: 'hidden', gap: 6 },
   orb: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.09)' },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: metrics.radius.full, backgroundColor: 'rgba(255,255,255,0.2)' },
   badgeText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
-  status: { color: '#ffffff', fontSize: 13, fontWeight: '600' },
+  status: { color: '#ffffff', fontSize: 13, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 4 },
   content: { flex: 1, gap: 6 },
   shade: { backgroundColor: '#0b1020' },
-  title: { color: '#ffffff', fontWeight: '800', letterSpacing: -0.3 },
-  time: { color: '#ffffff', fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: 0.5 },
+  // A soft shadow keeps white text readable on very transparent glass.
+  title: { color: '#ffffff', fontWeight: '800', letterSpacing: -0.3, textShadowColor: 'rgba(0,0,0,0.32)', textShadowRadius: 6, textShadowOffset: { width: 0, height: 1 } },
+  time: { color: '#ffffff', fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: 0.5, textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 6, textShadowOffset: { width: 0, height: 1 } },
   progress: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.25)', overflow: 'hidden' },
   progressFill: { height: 4, borderRadius: 2, backgroundColor: '#ffffff' },
   bottomRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4, minWidth: 0 },
-  metaText: { color: 'rgba(255,255,255,0.88)', fontSize: 12, flexShrink: 1 },
+  metaText: { color: 'rgba(255,255,255,0.92)', fontSize: 12, flexShrink: 1, textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 4 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 20 },
   dots: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1, overflow: 'hidden' },
   dot: { width: 6, height: 6, borderRadius: 3 },
