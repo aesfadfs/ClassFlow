@@ -8,8 +8,16 @@
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "scheme": "classflow",
-    "plugins": ["./scripts/with-android-gradle.cjs"],
-    "ios": { "supportsTablet": true, "bundleIdentifier": "app.classflow.mobile", "infoPlist": { "CADisableMinimumFrameDurationOnPhone": true } },
+    "plugins": [
+      "./scripts/with-android-gradle.cjs"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.classflow.mobile",
+      "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true
+      }
+    },
     "android": {
       "package": "app.classflow.mobile",
       "versionCode": 10,
@@ -17,9 +25,14 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/android-foreground.png",
         "monochromeImage": "./assets/android-foreground.png",
-        "backgroundColor": "#364BB6"
+        "backgroundColor": "#004AF2"
       }
     },
-    "web": { "bundler": "metro", "name": "课序 ClassFlow", "description": "安排课程，也为自己留一点空白。" }
+    "web": {
+      "bundler": "metro",
+      "name": "课序 ClassFlow",
+      "description": "安排课程，也为自己留一点空白。",
+      "favicon": "./assets/icon.png"
+    }
   }
 }

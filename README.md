@@ -1,5 +1,7 @@
 # 课序 · ClassFlow
 
+<img src="assets/icon.png" width="120" height="120" alt="课序蓝白课表图标" />
+
 安排课程，也为自己留一点空白。
 
 朋友加入私有仓库、下载运行及提交修改，请阅读 [朋友协作指南](CONTRIBUTING.md)。GitHub 仓库保留 Android 工程，但不包含签名密钥；现有 APK 从仓库 Releases 下载。下文 `dist/` 路径指本地构建或下载后的位置。
