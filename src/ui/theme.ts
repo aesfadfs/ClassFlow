@@ -34,4 +34,10 @@ export const springs = {
   // Motion.Lab physics-spring adapted to Reanimated's physical spring units.
   snap: { mass: 0.65, stiffness: 340, damping: 30, overshootClamping: true, energyThreshold: 0.001 },
   sheet: { mass: 0.9, stiffness: 310, damping: 33 },
+  // Paging and card-stack snapping: carry the release velocity, settle without wobble.
+  page: { mass: 0.8, stiffness: 240, damping: 30, overshootClamping: true },
+  card: { mass: 0.7, stiffness: 260, damping: 26 },
+  // Soft "jelly" return after a tap on the up-next card: a small, visible overshoot.
+  squeeze: { mass: 0.5, stiffness: 320, damping: 22 },
+  jelly: { mass: 1, stiffness: 170, damping: 8 },
 };

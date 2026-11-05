@@ -108,6 +108,44 @@ export function freeWindows(entries: Entry[], week: number, day: number, start =
   return windows.filter(window => window.end - window.start >= 30);
 }
 
+export type Occurrence = { entry: Entry; date: Date; week: number; offset: number };
+
+// Concrete upcoming sessions from "now": unfinished items today first, then
+// later days in date/time order. Only weeks inside the semester are used, so
+// discrete weeks and odd/even rules keep their meaning.
+export function upcomingOccurrences(entries: Entry[], preferences: Preferences, now: Date, { days = 28, limit = 12 } = {}): Occurrence[] {
+  const result: Occurrence[] = [];
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const minute = now.getHours() * 60 + now.getMinutes();
+  for (let offset = 0; offset < days && result.length < limit; offset++) {
+    const date = addDays(today, offset);
+    const week = weekNumber(date, preferences.semesterStart);
+    if (week < 1 || week > preferences.semesterWeeks) continue;
+    for (const entry of entriesForDay(entries, week, dayOfWeek(date))) {
+      if (offset === 0 && entry.end <= minute) continue;
+      result.push({ entry, date, week, offset });
+      if (result.length >= limit) break;
+    }
+  }
+  return result;
+}
+
+function duration(minutes: number) {
+  const hours = Math.floor(minutes / 60), rest = minutes % 60;
+  return hours ? `${hours} 小时${rest ? ` ${rest} 分钟` : ''}` : `${rest} 分钟`;
+}
+
+export function describeOccurrence({ entry, date, offset }: Occurrence, now: Date): { status: string; progress: number | null; dateLabel: string } {
+  const minute = now.getHours() * 60 + now.getMinutes();
+  const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日 ${DAYS[dayOfWeek(date)]}`;
+  if (offset === 0 && entry.start <= minute && minute < entry.end) {
+    return { status: `进行中 · 还剩 ${duration(entry.end - minute)}`, progress: (minute - entry.start) / (entry.end - entry.start), dateLabel };
+  }
+  if (offset === 0) return { status: entry.start - minute <= 90 ? `${duration(entry.start - minute)}后开始` : `今天 ${formatTime(entry.start)}`, progress: null, dateLabel };
+  const prefix = offset === 1 ? '明天' : offset === 2 ? '后天' : dateLabel;
+  return { status: `${prefix} ${formatTime(entry.start)}`, progress: null, dateLabel };
+}
+
 // Connected overlap groups share a stable lane count, including chain overlaps.
 export function layoutDay(entries: Entry[]): { entry: Entry; lane: number; lanes: number }[] {
   const sorted = [...entries].sort((a, b) => a.start - b.start || a.end - b.end);

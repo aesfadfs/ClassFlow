@@ -5,7 +5,7 @@ import { snapPlacement, type Placement } from '../domain/canvas';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { COLORS, DAYS, dateKey, entriesForWeek, formatTime, layoutDay, type Entry } from '../domain/schedule';
-import { haptic, Icon, Reveal, useAccessibility } from '../ui/primitives';
+import { haptic, Icon, PRESS_DELAY, Reveal, useAccessibility } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
 
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -29,6 +29,7 @@ function DateButton({ date, index, selected, today, short, onPress }: {
     accessibilityLabel={`${date.getMonth() + 1}月${date.getDate()}日 ${DAYS[index]}${today ? '，今天' : ''}`}
     accessibilityState={{ selected }}
     onPress={onPress}
+    unstable_pressDelay={Platform.OS === 'web' ? undefined : PRESS_DELAY}
     style={({ pressed }) => [styles.dateButton, pressed && { opacity: 0.65 }]}
   >
     <Text numberOfLines={1} maxFontSizeMultiplier={1.4} style={[styles.dayLabel, { color: selected || today ? theme.blue : theme.secondary }]}>
@@ -74,8 +75,8 @@ export function DayStrip({ dates, day, now, onDay }: DateSelectorProps) {
   </View>;
 }
 
-function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWidth, hourHeight, peers, onMove, onDrag }: {
-  entry: Entry; height: number; singleDay: boolean; lanes: number; style: StyleProp<ViewStyle>; onPress: () => void;
+function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWidth, hourHeight, peers, onMove, onDrag, dragEnabled }: {
+  entry: Entry; height: number; singleDay: boolean; lanes: number; dragEnabled: boolean; style: StyleProp<ViewStyle>; onPress: () => void;
   columnWidth: number; hourHeight: number; peers: Entry[]; onMove: (entry: Entry) => void; onDrag: (placement: Placement | null) => void;
 }) {
   const theme = useTheme();
@@ -133,13 +134,13 @@ function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWi
   }
   function gesture(resize: boolean) {
     const mode = resize ? 'resize' : 'move';
-    return Gesture.Pan().runOnJS(true).minDistance(4).activateAfterLongPress(Platform.OS === 'web' ? 0 : 220)
+    return Gesture.Pan().runOnJS(true).enabled(dragEnabled).minDistance(4).activateAfterLongPress(Platform.OS === 'web' ? 0 : 220)
       .onBegin(event => { origin.current = { x: event.absoluteX, y: event.absoluteY }; })
       .onStart(() => {
         if (settling.current) return;
         settle.set(0);
         activeGesture.current = mode;
-        dragging.current = true; active.set(true); haptic();
+        dragging.current = true; active.set(true); haptic('drag');
         scale.set(reduceMotion ? 1 : withSpring(1.025, springs.press));
         onDrag({ day: entry.day, start: entry.start, end: entry.end });
       })
@@ -148,6 +149,9 @@ function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWi
         const dx = event.absoluteX - origin.current.x, dy = event.absoluteY - origin.current.y;
         const day = singleDay || resize ? entry.day : Math.max(0, Math.min(6, entry.day + Math.round(dx / columnWidth)));
         const next = snapPlacement(entry, day, (resize ? entry.end : entry.start) + dy / hourHeight * 60, peers, resize);
+        // A light detent each time the card snaps to a new day or 5-minute slot.
+        const previous = target.current;
+        if (previous && (previous.day !== next.day || previous.start !== next.start || previous.end !== next.end)) haptic('tick');
         target.current = next; setPreview(next); onDrag(next);
         // Motion.Lab physics-spring: follow the pointer freely, attract only on release.
         if (resize) extraHeight.set(Math.max(12 - height, dy));
@@ -168,10 +172,10 @@ function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWi
   const plan = entry.kind === 'plan';
   const time = `${formatTime(preview?.start ?? entry.start)}–${formatTime(preview?.end ?? entry.end)}`;
 
-  return <GestureDetector gesture={gesture(false)} touchAction="none"><Animated.View style={[style, dragStyle]}><Pressable
+  return <GestureDetector gesture={gesture(false)} touchAction={dragEnabled ? 'none' : 'auto'}><Animated.View style={[style, dragStyle]}><Pressable
     accessibilityRole="button"
     accessibilityLabel={[`${plan ? '安排' : '课程'}，${entry.title}`, `${DAYS[entry.day]} ${time}`, entry.location, entry.teacher].filter(Boolean).join('，')}
-    accessibilityHint="点按编辑；长按拖动调整时间，拖动底边调整时长"
+    accessibilityHint={dragEnabled ? '点按编辑；长按拖动调整时间，拖动底边调整时长' : '点按编辑'}
     hitSlop={height < metrics.touch ? { top: 4, bottom: 4, left: 0, right: 0 } : undefined}
     onPress={() => { if (!dragging.current && Date.now() > suppressPress.current) onPress(); }}
     onPressIn={() => { if (!reduceMotion) scale.set(withSpring(0.98, springs.press)); }}
@@ -198,16 +202,16 @@ function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWi
       {roomy && height >= 102 && !!entry.teacher && <Text numberOfLines={1} style={[styles.courseDetail, { color: theme.secondary }]}>{entry.teacher}</Text>}
     </Animated.View>}
   </Pressable>
-    <GestureDetector gesture={gesture(true)} touchAction="none">
+    {dragEnabled && <GestureDetector gesture={gesture(true)} touchAction="none">
       <View accessibilityLabel={`调整${entry.title}时长`} style={styles.resizeHandle}>
         <View style={[styles.resizeGrip, { backgroundColor: accent }]} />
       </View>
-    </GestureDetector>
+    </GestureDetector>}
   </Animated.View></GestureDetector>;
 }
 
-export function Calendar({ entries, week, dates, day, mobile, singleDay, now = new Date(), onDay, onEdit, onEmpty, onMove }: {
-  entries: Entry[]; week: number; dates: Date[]; day: number; mobile: boolean; singleDay: boolean; now?: Date;
+export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEnabled = true, now = new Date(), onDay, onEdit, onEmpty, onMove }: {
+  entries: Entry[]; week: number; dates: Date[]; day: number; mobile: boolean; singleDay: boolean; dragEnabled?: boolean; now?: Date;
   onDay: (day: number) => void; onEdit: (entry: Entry) => void; onEmpty: (day: number, start: number) => void;
   onMove: (entry: Entry) => void;
 }) {
@@ -305,7 +309,7 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, now = n
           const cardHeight = Math.max(12, (entry.end - entry.start) / 60 * hourHeight - 3);
           const columnWidth = canvasWidth / visibleDays.length;
           return <CourseBlock key={entry.id} entry={entry} height={cardHeight} singleDay={singleDay} lanes={lanes}
-            columnWidth={columnWidth} hourHeight={hourHeight} peers={peers} onMove={onMove} onDrag={onDrag}
+            columnWidth={columnWidth} hourHeight={hourHeight} peers={peers} onMove={onMove} onDrag={onDrag} dragEnabled={dragEnabled}
             onPress={() => onEdit(entry)} style={{ position: 'absolute', top: minuteOffset(entry.start) + 1.5,
               left: columnWidth * (dayPosition + lane / lanes), width: columnWidth / lanes,
               height: cardHeight, paddingHorizontal: singleDay ? 5 : 2 }} />;

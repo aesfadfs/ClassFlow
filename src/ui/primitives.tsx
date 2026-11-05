@@ -1,13 +1,15 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View, type GestureResponderEvent, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { metrics, springs, useTheme } from './theme';
+import { frost } from './glass';
 
 const AccessibilityContext = createContext({ reduceMotion: false, reduceTransparency: false });
 export const useAccessibility = () => useContext(AccessibilityContext);
@@ -58,10 +60,14 @@ const paths = {
   file: 'M14 2H4v20h16V8l-6-6zM14 2v6h6M8 13h8M8 17h5',
   refresh: 'M20 7a9 9 0 1 0 1 9M20 2v6h-6',
   coffee: 'M3 8h14v7a6 6 0 0 1-12 0V8M17 8h2a3 3 0 0 1 0 6h-2M2 22h18M7 2v3M12 2v3',
+  lock: 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5zM12 15v2',
+  unlock: 'M7 11V7a5 5 0 0 1 9.6-2M5 11h14v10H5zM12 15v2',
+  image: 'M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15 9h.01',
+  vibrate: 'M8 4h8v16H8zM4 8v8M20 8v8',
 } as const;
 export type IconName = keyof typeof paths;
 const symbols: Record<IconName, string> = {
-  calendar: 'calendar', planner: 'checklist', grid: 'square.grid.2x2', plus: 'plus', left: 'chevron.left', right: 'chevron.right', down: 'chevron.down', arrow: 'arrow.up.right', check: 'checkmark', close: 'xmark', clock: 'clock', pin: 'mappin.and.ellipse', book: 'book', import: 'square.and.arrow.down', settings: 'gearshape', sun: 'sun.max', sparkles: 'sparkles', trash: 'trash', school: 'graduationcap', camera: 'camera', globe: 'globe', leaf: 'leaf', edit: 'square.and.pencil', info: 'info.circle', file: 'doc.text', refresh: 'arrow.clockwise', coffee: 'cup.and.saucer',
+  calendar: 'calendar', planner: 'checklist', grid: 'square.grid.2x2', plus: 'plus', left: 'chevron.left', right: 'chevron.right', down: 'chevron.down', arrow: 'arrow.up.right', check: 'checkmark', close: 'xmark', clock: 'clock', pin: 'mappin.and.ellipse', book: 'book', import: 'square.and.arrow.down', settings: 'gearshape', sun: 'sun.max', sparkles: 'sparkles', trash: 'trash', school: 'graduationcap', camera: 'camera', globe: 'globe', leaf: 'leaf', edit: 'square.and.pencil', info: 'info.circle', file: 'doc.text', refresh: 'arrow.clockwise', coffee: 'cup.and.saucer', lock: 'lock', unlock: 'lock.open', image: 'photo', vibrate: 'iphone.radiowaves.left.and.right',
 };
 export function Icon({ name, size = 20, color, strokeWidth = 1.65 }: { name: IconName; size?: number; color?: string; strokeWidth?: number }) {
   const theme = useTheme();
@@ -88,24 +94,98 @@ export function Glass({ children, style, interactive = false }: { children?: Rea
   return <View style={[base, { backgroundColor: reduceTransparency ? theme.raised : theme.glass }, style]}>{children}</View>;
 }
 
-export function haptic() {
-  if (Platform.OS === 'android') void Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Segment_Tick).catch(() => {});
-  if (Platform.OS === 'ios') void Haptics.selectionAsync().catch(() => {});
+// The view behind floating glass. Android's blur samples this view; other
+// platforms blur whatever is underneath and ignore it.
+export const BlurTargetContext = createContext<React.RefObject<View | null> | null>(null);
+
+/**
+ * Apple-style liquid glass: real Liquid Glass on iOS 26, elsewhere a strong
+ * backdrop blur with a translucent fill, a bright specular rim and a soft
+ * top highlight so the surface reads as a lens over the content.
+ */
+export function LiquidGlass({ children, style, radius = metrics.radius.full, interactive = false, accent }: {
+  children?: React.ReactNode; style?: StyleProp<ViewStyle>; radius?: number; interactive?: boolean; accent?: string;
+}) {
+  const theme = useTheme();
+  const { reduceTransparency } = useAccessibility();
+  const blurTarget = useContext(BlurTargetContext);
+  const shadow = { borderRadius: radius, boxShadow: theme.dark ? '0 10px 30px rgba(0,0,0,0.45)' : '0 10px 30px rgba(30,45,90,0.16), 0 1px 3px rgba(30,45,90,0.10)' };
+  if (!reduceTransparency && Platform.OS === 'ios' && isLiquidGlassAvailable() && isGlassEffectAPIAvailable()) {
+    return <GlassView glassEffectStyle="regular" isInteractive={interactive} tintColor={accent} style={[shadow, { overflow: 'hidden' }, style]}>{children}</GlassView>;
+  }
+  const fill = accent ?? (reduceTransparency ? theme.raised : theme.dark ? 'rgba(30,35,48,0.48)' : 'rgba(255,255,255,0.42)');
+  const rim = theme.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.85)';
+  return <View style={[shadow, style]}>
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]}>
+      {!reduceTransparency && !accent && <BlurView intensity={Platform.OS === 'android' ? 70 : 38} tint={theme.dark ? 'dark' : 'light'}
+        blurMethod="dimezisBlurViewSdk31Plus" blurTarget={blurTarget ?? undefined} style={StyleSheet.absoluteFill} />}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} />
+      <LinearGradient colors={theme.dark ? ['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'rgba(255,255,255,0.06)'] : ['rgba(255,255,255,0.75)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0.32)']}
+        locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+      <View style={[StyleSheet.absoluteFill, { borderRadius: radius, borderWidth: 1, borderColor: rim }]} />
+    </View>
+    {children}
+  </View>;
+}
+
+export type HapticKind = 'selection' | 'tick' | 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'drag' | 'drop' | 'toggleOn' | 'toggleOff' | 'edge';
+let hapticsEnabled = true;
+export function setHapticsEnabled(enabled: boolean) { hapticsEnabled = enabled; }
+const ANDROID_HAPTICS: Record<HapticKind, Haptics.AndroidHaptics> = {
+  selection: Haptics.AndroidHaptics.Segment_Tick,
+  tick: Haptics.AndroidHaptics.Segment_Frequent_Tick,
+  light: Haptics.AndroidHaptics.Virtual_Key,
+  medium: Haptics.AndroidHaptics.Context_Click,
+  heavy: Haptics.AndroidHaptics.Long_Press,
+  success: Haptics.AndroidHaptics.Confirm,
+  warning: Haptics.AndroidHaptics.Reject,
+  drag: Haptics.AndroidHaptics.Drag_Start,
+  drop: Haptics.AndroidHaptics.Gesture_End,
+  toggleOn: Haptics.AndroidHaptics.Toggle_On,
+  toggleOff: Haptics.AndroidHaptics.Toggle_Off,
+  edge: Haptics.AndroidHaptics.Clock_Tick,
+};
+// One place for tactile feedback so it can be switched off in settings.
+export function haptic(kind: HapticKind = 'selection') {
+  if (!hapticsEnabled) return;
+  if (Platform.OS === 'android') { void Haptics.performAndroidHapticsAsync(ANDROID_HAPTICS[kind]).catch(() => {}); return; }
+  if (Platform.OS !== 'ios') return;
+  const run = kind === 'selection' || kind === 'tick' ? Haptics.selectionAsync()
+    : kind === 'success' ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    : kind === 'warning' ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+    : Haptics.impactAsync(kind === 'heavy' || kind === 'drag' ? Haptics.ImpactFeedbackStyle.Medium
+      : kind === 'medium' ? Haptics.ImpactFeedbackStyle.Rigid : kind === 'edge' ? Haptics.ImpactFeedbackStyle.Soft : Haptics.ImpactFeedbackStyle.Light);
+  void run.catch(() => {});
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function PressSurface({ children, style, disabled, onPressIn, onPressOut, scale = 0.975, ...props }: Omit<PressableProps, 'style' | 'children'> & {
+// A press that travelled this far was a swipe (pager, card stack), not a tap.
+const TAP_SLOP = 10;
+export const PRESS_DELAY = 70;
+export function useTapGuard() {
+  const origin = useRef({ x: 0, y: 0 });
+  return {
+    start: (event: GestureResponderEvent) => { origin.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }; },
+    isTap: (event: GestureResponderEvent) => Math.hypot(event.nativeEvent.pageX - origin.current.x, event.nativeEvent.pageY - origin.current.y) < TAP_SLOP,
+  };
+}
+
+export function PressSurface({ children, style, disabled, onPress, onPressIn, onPressOut, scale = 0.975, ...props }: Omit<PressableProps, 'style' | 'children'> & {
   children?: React.ReactNode; style?: StyleProp<ViewStyle>; scale?: number;
 }) {
+  const tap = useTapGuard();
   const pressed = useSharedValue(0);
   const { reduceMotion } = useAccessibility();
   const feedback = useAnimatedStyle(() => ({
     transform: [{ scale: reduceMotion ? 1 : 1 - (1 - scale) * pressed.value }],
     opacity: disabled ? 0.45 : 1 - 0.16 * Math.max(0, Math.min(pressed.value, 1)),
   }));
-  return <AnimatedPressable {...props} disabled={disabled} style={[{ justifyContent: 'center' }, style, feedback]}
-      onPressIn={event => { pressed.value = reduceMotion ? 1 : withSpring(1, springs.press); onPressIn?.(event); }}
+  // A short press delay on touch devices: a fast swipe across a card no longer
+  // flashes its pressed state (the "flicker" while paging quickly).
+  return <AnimatedPressable unstable_pressDelay={Platform.OS === 'web' ? undefined : PRESS_DELAY} {...props} disabled={disabled} style={[{ justifyContent: 'center' }, style, feedback]}
+      onPress={onPress && (event => { if (tap.isTap(event)) onPress(event); })}
+      onPressIn={event => { tap.start(event); pressed.value = reduceMotion ? 1 : withSpring(1, springs.press); onPressIn?.(event); }}
       onPressOut={event => { pressed.value = reduceMotion ? 0 : withSpring(0, springs.press); onPressOut?.(event); }}>
       {children}
   </AnimatedPressable>;
@@ -117,9 +197,11 @@ export function Button({ children, onPress, icon, label, variant = 'glass', styl
 }) {
   const theme = useTheme();
   const color = variant === 'primary' ? theme.onAccent : variant === 'danger' ? theme.danger : selected ? theme.blue : theme.ink;
-  const backgroundColor = variant === 'primary' ? theme.blue : variant === 'danger' ? theme.dangerBg : selected ? theme.tint : variant === 'glass' ? theme.raised : 'transparent';
+  const { reduceTransparency } = useAccessibility();
+  const glass = frost(theme);
+  const backgroundColor = variant === 'primary' ? theme.blue : variant === 'danger' ? theme.dangerBg : selected ? theme.tint : variant === 'glass' ? (reduceTransparency ? theme.raised : glass.fill) : 'transparent';
   return <PressSurface accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled, selected }} disabled={disabled}
-    onPress={onPress} style={[{ flexShrink: 0, alignSelf: 'center', borderRadius: metrics.radius.md, backgroundColor, borderWidth: variant === 'glass' ? 1 : 0, borderColor: selected ? theme.accentLine : theme.line }, style]}>
+    onPress={onPress} style={[{ flexShrink: 0, alignSelf: 'center', borderRadius: metrics.radius.md, backgroundColor, borderWidth: variant === 'glass' ? 1 : 0, borderColor: selected ? theme.accentLine : reduceTransparency ? theme.line : glass.rim }, style]}>
     <View style={{ minHeight: metrics.touch, width: children ? undefined : metrics.touch, paddingHorizontal: children ? (small ? 12 : 16) : 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
       {icon && <Icon name={icon} size={small ? 17 : 19} color={color} />}
       {typeof children === 'string' ? <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ fontSize: small ? 13 : 14, fontWeight: '600', color }}>{children}</Text> : children}
@@ -143,12 +225,16 @@ export function Reveal({ children, delay = 0, distance = 8, style }: { children:
 
 export function useUI() {
   const theme = useTheme();
+  const { reduceTransparency } = useAccessibility();
   return useMemo(() => StyleSheet.create({
     row: { flexDirection: 'row', alignItems: 'center' },
     label: { fontSize: metrics.type.caption, color: theme.muted },
     body: { fontSize: metrics.type.label, lineHeight: 22, color: theme.secondary },
     title: { color: theme.ink, fontWeight: '600', fontSize: metrics.type.title },
     pill: { borderRadius: metrics.radius.full, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: theme.tint },
-    card: { borderRadius: metrics.radius.lg, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.line },
-  }), [theme]);
+    // Frosted glass by default; solid when the system asks for less transparency.
+    card: reduceTransparency ? { borderRadius: metrics.radius.lg, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.line }
+      : { borderRadius: metrics.radius.lg, backgroundColor: frost(theme).fill, borderWidth: 1, borderColor: frost(theme).rim, boxShadow: frost(theme).shadow },
+    solidCard: { borderRadius: metrics.radius.lg, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.line },
+  }), [theme, reduceTransparency]);
 }

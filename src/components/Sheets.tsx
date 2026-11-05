@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, DAYS, findConflicts, formatTime, parseDate, parseTime, validateEntry, dayOfWeek, type Entry, type Preferences } from '../domain/schedule';
 import { CSV_TEMPLATE, analyzeImport, parseDemoImport, parseImport, type ImportResult } from '../domain/import';
@@ -10,6 +10,8 @@ import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 import { hainnu } from '../features/schools';
+import { DIM_LEVELS, type Appearance, type CardImageScope } from '../domain/appearance';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SchoolBrowser } from './SchoolBrowser';
 import { normalizeZhengfang, requiredSectionTimes, resolveSchoolPeriodTimes, type SectionTime, type TimetableCapture } from '../features/zhengfang';
 
@@ -159,6 +161,27 @@ export function Field({ label, value, onChange, placeholder, multiline, numeric 
   </View>;
 }
 
+export function Toggle({ label, detail, value, onChange }: { label: string; detail?: string; value: boolean; onChange: (value: boolean) => void }) {
+  const theme = useTheme();
+  const ui = useUI();
+  const { reduceMotion } = useAccessibility();
+  const on = useSharedValue(value ? 1 : 0);
+  useEffect(() => { on.set(reduceMotion ? Number(value) : withSpring(Number(value), springs.press)); }, [on, reduceMotion, value]);
+  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: on.get() * 20 }] }));
+  return <PressSurface accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: value }} aria-checked={value} scale={0.99}
+    onPress={() => { haptic(value ? 'toggleOff' : 'toggleOn'); onChange(!value); }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: metrics.touch }}>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ fontSize: metrics.type.body, color: theme.ink, fontWeight: '600' }}>{label}</Text>
+        {!!detail && <Text style={ui.label}>{detail}</Text>}
+      </View>
+      <View style={{ width: 50, height: 30, borderRadius: 15, padding: 3, backgroundColor: value ? theme.blue : theme.line }}>
+        <Animated.View style={[{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#ffffff', boxShadow: '0 1px 3px rgba(0,0,0,0.25)' }, knob]} />
+      </View>
+    </View>
+  </PressSurface>;
+}
+
 function Choices<T extends string>({ label, items, value, onChange }: { label: string; items: { key: T; title: string; icon?: IconName }[]; value: T; onChange: (value: T) => void }) {
   const styles = useSheetStyles();
   const theme = useTheme();
@@ -186,7 +209,11 @@ function Choices<T extends string>({ label, items, value, onChange }: { label: s
   </View>;
 }
 
-export function EntrySheet({ closingRequested = false, entry, entries, semesterWeeks, isNew, onClose, onSave, onDelete }: { closingRequested?: boolean; entry: Entry; entries: Entry[]; semesterWeeks: number; isNew: boolean; onClose: () => void; onSave: (entry: Entry) => void; onDelete: (id: string) => void }) {
+export function EntrySheet({ closingRequested = false, entry, entries, semesterWeeks, isNew, onClose, onSave, onDelete, cardImage = null, onPickImage }: {
+  closingRequested?: boolean; entry: Entry; entries: Entry[]; semesterWeeks: number; isNew: boolean; onClose: () => void;
+  onSave: (entry: Entry, image?: { scope: CardImageScope; uri: string | null; frost?: boolean }) => void; onDelete: (id: string) => void;
+  cardImage?: { uri: string; scope: CardImageScope; frost?: boolean } | null; onPickImage?: () => Promise<string | null>;
+}) {
   const theme = useTheme();
   const ui = useUI();
   const styles = useSheetStyles();
@@ -201,6 +228,11 @@ export function EntrySheet({ closingRequested = false, entry, entries, semesterW
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  // Picture changes are only applied when the entry is saved.
+  const [imageScope, setImageScope] = useState<CardImageScope>(cardImage?.scope ?? 'title');
+  const [image, setImage] = useState<string | null>(cardImage?.uri ?? null);
+  const [frosted, setFrosted] = useState(!!cardImage?.frost);
+  const imageChanged = image !== (cardImage?.uri ?? null) || (!!image && (imageScope !== cardImage?.scope || frosted !== !!cardImage?.frost));
   const clearValidation = () => { setConflict(false); setError(''); };
   const update = (value: Partial<Entry>) => { setDraft(current => ({ ...current, ...value })); clearValidation(); };
   function save() {
@@ -222,7 +254,7 @@ export function EntrySheet({ closingRequested = false, entry, entries, semesterW
         const title = firstTitle.length > 24 ? `${firstTitle.slice(0, 24)}…` : firstTitle;
         return setError(`与「${title}」${conflicts.length > 1 ? `等 ${conflicts.length} 条安排` : ''}时间重叠。请调整时间，或选择仍然保存。`);
       }
-      onSave(next);
+      onSave(next, imageChanged ? { scope: image ? imageScope : (cardImage?.scope ?? imageScope), uri: image, frost: frosted } : undefined);
     } catch (error) { setError(error instanceof Error ? error.message : '请检查填写的信息'); }
   }
   return <Sheet closingRequested={closingRequested} title={`${isNew ? '添加' : '编辑'}${draft.kind === 'course' ? '课程' : '安排'}`} notice={error} onClose={onClose} footer={close => <>
@@ -289,6 +321,24 @@ export function EntrySheet({ closingRequested = false, entry, entries, semesterW
         })}
       </View>
     </View>
+    {onPickImage && <View style={styles.field}>
+      <Text style={styles.fieldLabel}>首页卡片图片</Text>
+      <View style={styles.cardImageRow}>
+        <View testID="card-image-preview" style={styles.cardThumb}>
+          {image ? <Image source={{ uri: image }} blurRadius={frosted ? 8 : 0} resizeMode="cover" style={StyleSheet.absoluteFill} />
+            : <LinearGradient colors={[COLORS[draft.color].accent, COLORS[draft.color].text]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
+          <Text numberOfLines={1} style={styles.cardThumbText}>{draft.title || '未命名'}</Text>
+        </View>
+        <View style={{ flex: 1, gap: 8 }}>
+          <Button small icon="image" onPress={async () => { const uri = await onPickImage(); if (uri) { haptic('success'); setImage(uri); } }}>{image ? '更换图片' : '选择图片'}</Button>
+          {!!image && <Button small variant="ghost" icon="close" onPress={() => { haptic('light'); setImage(null); }}>移除图片</Button>}
+        </View>
+      </View>
+      {!!image && <Choices<CardImageScope> label="图片用于" value={imageScope} onChange={setImageScope}
+        items={[{ key: 'title', title: '同名课程全部' }, { key: 'entry', title: '仅这一条' }]} />}
+      {!!image && <Toggle label="雾化图片" detail="给图片加一层磨砂玻璃，画面更柔和，文字更清楚" value={frosted} onChange={setFrosted} />}
+      <Text style={styles.hint}>{image ? imageScope === 'title' ? `所有「${draft.title.trim() || '同名'}」卡片都会使用这张图片；单独设置过的卡片仍保留自己的图片。` : '只有这一条卡片使用这张图片，会覆盖同名课程的统一图片。' : '未设置图片时使用标记颜色的渐变。'}</Text>
+    </View>}
     <Field label="备注" value={draft.notes} onChange={notes => update({ notes })} multiline placeholder="给未来的自己留句话…" />
     <Text style={ui.body}>修改将应用于上述周次内的这条{draft.kind === 'course' ? '课程' : '安排'}。</Text>
   </Sheet>;
@@ -519,7 +569,10 @@ function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (c
   </PressSurface>;
 }
 
-export function SettingsSheet({ closingRequested = false, preferences, onSave, onClose, onExport, onClearDemo, demo }: { closingRequested?: boolean; preferences: Preferences; onSave: (preferences: Preferences) => void; onClose: () => void; onExport: () => Promise<void>; onClearDemo: () => void; demo: boolean }) {
+export function SettingsSheet({ closingRequested = false, preferences, onSave, onClose, onExport, onClearDemo, demo, appearance, onAppearance, onPickBackground }: {
+  closingRequested?: boolean; preferences: Preferences; onSave: (preferences: Preferences) => void; onClose: () => void; onExport: () => Promise<void>; onClearDemo: () => void; demo: boolean;
+  appearance?: Appearance; onAppearance?: (patch: Partial<Appearance>) => void; onPickBackground?: () => Promise<string | null>;
+}) {
   const theme = useTheme();
   const ui = useUI();
   const styles = useSheetStyles();
@@ -563,6 +616,29 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
     <Field label="学期开始日期（第一周的周一）" value={start} onChange={value => { setStart(value); setError(''); }} placeholder="2026-08-31" />
     <Field label="学期周数" value={weeks} onChange={value => { setWeeks(value); setError(''); }} numeric />
     <Text style={ui.body}>课程按学期开始日期计算周次。学期范围外的课程会暂时隐藏。</Text>
+    {appearance && onAppearance && <>
+      <View style={styles.divider} />
+      <View style={styles.group}>
+        <Text accessibilityRole="header" style={styles.itemTitle}>外观与操作</Text>
+        <View style={styles.cardImageRow}>
+          <View testID="background-preview" style={[styles.bgThumb, { backgroundColor: theme.bg }]}>
+            {appearance.background ? <>
+              <Image source={{ uri: appearance.background }} resizeMode="cover" style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.bg, opacity: appearance.backgroundDim }]} />
+            </> : <Icon name="image" size={24} color={theme.muted} />}
+          </View>
+          <View style={{ flex: 1, gap: 8 }}>
+            <Button small icon="image" onPress={async () => { const uri = await onPickBackground?.(); if (uri) { haptic('success'); onAppearance({ background: uri }); } }}>{appearance.background ? '更换背景图片' : '选择背景图片'}</Button>
+            {!!appearance.background && <Button small variant="ghost" icon="close" onPress={() => { haptic('light'); onAppearance({ background: null }); }}>恢复默认背景</Button>}
+          </View>
+        </View>
+        {!!appearance.background && <Choices<string> label="背景遮罩" value={String(appearance.backgroundDim)} onChange={value => onAppearance({ backgroundDim: Number(value) })}
+          items={DIM_LEVELS.map(level => ({ key: String(level.value), title: `遮罩${level.title}` }))} />}
+        <Toggle label="启动问候" detail="打开时先显示一句问候，再揭开课表；轻点可跳过" value={appearance.greeting} onChange={greeting => onAppearance({ greeting })} />
+        <Toggle label="允许拖动调整课程" detail="关闭后，课表详情里的课程只能点开编辑，避免误触移动" value={appearance.dragEnabled} onChange={dragEnabled => onAppearance({ dragEnabled })} />
+        <Toggle label="振动反馈" detail="切换页面、翻卡片、拖动吸附和保存时轻微振动" value={appearance.haptics} onChange={haptics => onAppearance({ haptics })} />
+      </View>
+    </>}
     <View style={styles.divider} />
     <View style={styles.group}>
       <Text accessibilityRole="header" style={styles.itemTitle}>备份与数据</Text>
@@ -640,5 +716,10 @@ function useSheetStyles() {
     checkboxChecked: { backgroundColor: theme.blue, borderColor: theme.blue },
     checkboxLabel: { flex: 1, color: theme.secondary, fontSize: metrics.type.label },
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: theme.line },
+    hint: { color: theme.muted, fontSize: metrics.type.caption, lineHeight: 18 },
+    cardImageRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    cardThumb: { width: 128, height: 81, borderRadius: metrics.radius.md, overflow: 'hidden', justifyContent: 'flex-end', padding: 8, backgroundColor: theme.soft },
+    cardThumbText: { color: '#ffffff', fontSize: 12, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.45)', textShadowRadius: 4 },
+    bgThumb: { width: 72, height: 110, borderRadius: metrics.radius.md, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.line },
   }), [theme]);
 }
