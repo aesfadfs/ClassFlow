@@ -37,7 +37,7 @@ const keyOf = (item: Occurrence) => `${item.entry.id}-${item.offset}`;
  * inertia), mouse wheel or keyboard; tap a card to bring it to the top, tap the
  * top card for a soft bounce, long-press to edit.
  */
-export function UpNextStack({ items, now, onOpen, onAdd, imageFor }: {
+export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen, onAdd, imageFor }: {
   items: Occurrence[]; now: Date; onOpen: (entry: Entry) => void; onAdd: () => void; imageFor?: (entry: Entry) => { uri: string; frost: boolean } | undefined;
 }) {
   const stage = useScreenOffset();
@@ -184,7 +184,7 @@ export function UpNextStack({ items, now, onOpen, onAdd, imageFor }: {
       <Text maxFontSizeMultiplier={1.2} style={[ui.label, { fontVariant: ['tabular-nums'] }]}>{active + 1} / {count}{hint}</Text>
     </View>
   </View>;
-}
+});
 
 function StackCard({ item, now, image, index, position, step, width, height, left, front, interactive, glass, frame, onPress, onLongPress }: {
   item: Occurrence; now: Date; image?: { uri: string; frost: boolean }; index: number; position: SharedValue<number>; step: number; width: number; height: number; left: number;

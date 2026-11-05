@@ -4,7 +4,7 @@
 
 ## 项目约定
 
-- 使用中文与用户沟通。项目是 Expo 56 / React Native 0.85 / React 19 / TypeScript 应用，支持 Android、iOS 和 Web；当前版本 0.1.7，Android versionCode 8。
+- 使用中文与用户沟通。项目是 Expo 56 / React Native 0.85 / React 19 / TypeScript 应用，支持 Android、iOS 和 Web；当前版本 0.1.8，Android versionCode 9。
 - 使用 npm 和已有 `package-lock.json`，新电脑先执行 `npm ci`。不要为迁移主动升级框架或重写项目。
 - 首次启动必须为空白，不能自动添加示例课程或个人安排。旧数据迁移只能清理仍标为未修改示例的数据，保留真实用户数据。
 - 学校、CSV、HTML、JSON 导入默认覆盖课程并保留个人安排；用户关闭覆盖选项才合并。取消部分课程勾选不能改变覆盖模式。导入和编辑要保留撤销能力。
@@ -20,5 +20,5 @@
 - Web / 浏览器测试不能代替 Android、iOS 真机验收。报告时区分本次实测、README 历史记录和未验证项。
 - `npm run build:android` 只导出 JavaScript 资源，不生成 APK。可安装 APK 需 Gradle 或 EAS 构建。
 - 原生依赖或代码更新后要重新构建 APK；复制旧 APK 或只更新源码不算完成。发布前使用 `scripts/verify-android-import.ps1` 核验 APK 内识别脚本与源码一致。
-- 保留 `scripts/with-android-gradle.cjs` 的 Gradle 8.14.3 兼容处理。现有 `android/app/debug.keystore` 用于延续自用包的签名；不要随意替换，也不要作为正式生产签名公开发布。
+- 保留 `scripts/with-android-gradle.cjs` 的 Gradle 8.14.3 兼容处理。正式分发版用仓库外的 kenshi 发布密钥签名（见 HANDOFF.md），密钥库和密码绝不进仓库、对话或日志；`android/app/debug.keystore` 只作本地自测回退，不要随意替换，也不要用它签名公开发布的版本。
 - 不依赖旧电脑的 `.tools`、SDK 路径或对话记录。具体环境、构建和迁移办法见 `HANDOFF.md`。

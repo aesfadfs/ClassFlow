@@ -54,6 +54,6 @@ Android 环境要求见 HANDOFF.md。克隆后没有 `android/app/debug.keystore
 keytool -genkeypair -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-该命令只用于开发测试。不同密钥签出的 APK 不能直接覆盖原有签名的安装包；不要覆盖所有者本机现有密钥。需要继续给原有安装提供覆盖升级时，由所有者保留原签名构建。正式发布需另行配置生产签名。
+该命令只用于开发测试。不同密钥签出的 APK 不能直接覆盖原有签名的安装包；不要覆盖所有者本机现有密钥。需要继续给原有安装提供覆盖升级时，由所有者保留原签名构建。正式分发版由所有者用 kenshi 发布密钥签名，朋友本地构建得到的是开发签名包，不能覆盖安装正式版。
 
 不要提交 `.env`、登录令牌、学校原始页面、浏览器会话、个人课表备份或签名密钥。业务或原生改动的验证要求见 CLAUDE.md；Web 测试不能替代真机验收。

@@ -38,7 +38,7 @@ npm run preview:web
 
 ## 3. 当前实现和关键文件
 
-当前版本为 0.1.7 / Android versionCode 8，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
+当前版本为 0.1.8 / Android versionCode 9，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
 
 已实现课表概览、周 / 日时间画布、课程与个人安排的增删改、拖动和时长调整、冲突提示、撤销、本地保存、JSON 备份、学期设置、CSV / HTML / JSON 导入和原生学校浏览器。支持浅色 / 深色与响应式布局。“拍照翻译”目前只是未来功能入口。
 
@@ -114,7 +114,7 @@ powershell -File scripts/verify-android-import.ps1 -ApkPath android/app/build/ou
 
 此脚本需要 Node 和可用的 Playwright Chromium（或通过 `-BrowserPath` 指定 Edge / Chromium），会比较 APK 内识别脚本并运行兼容与海南师大结构回归。
 
-现有 release 配置使用 `android/app/debug.keystore` 开发签名。本次核对该文件与旧构建目录使用的 keystore 的 SHA-256 相同；保留它是为了继续给自用 App 做覆盖升级。它不是正式发布密钥，不要将包含它的迁移包作为公开发布源码。若以后使用 EAS 或新签名，需确认覆盖安装兼容性，卸载前先备份个人课表。
+正式分发版从 0.1.8 起使用别名为 `kenshi` 的发布密钥（证书 `CN=kenshi, O=ClassFlow`）。密钥库和密码保存在仓库之外（所有者本机 `E:\ClassFlow-signing\`），通过 Gradle 用户目录的 `gradle.properties` 中 `CLASSFLOW_RELEASE_STORE_FILE`、`CLASSFLOW_RELEASE_STORE_PASSWORD`、`CLASSFLOW_RELEASE_KEY_ALIAS`、`CLASSFLOW_RELEASE_KEY_PASSWORD` 提供；没有这些属性时 release 构建回退到 `android/app/debug.keystore`，只用于本地自测。kenshi 密钥一旦丢失就无法发布可覆盖安装的更新，换电脑时须手动迁移并另行备份，绝不提交到仓库。0.1.7 及以前的安装包使用 `android/app/debug.keystore` 开发签名，与 kenshi 签名不同，从旧版换到 0.1.8 需要先导出备份、卸载再安装。
 
 `npm run build:android` 仅验证 Android JavaScript 导出，不能生成可安装 APK。`eas.json` 保留 `preview` APK 配置，使用时需自行登录 Expo 并关联项目；包内没有迁移登录凭据。iOS 原生开发需要 macOS / Xcode 或适当的 EAS 构建环境。
 

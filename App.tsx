@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Image, Platform, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { BlurTargetView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -53,6 +53,7 @@ function ClassFlow() {
   const [view, setView] = useState<'week' | 'day'>(() => mobile ? 'day' : 'week');
   const [detail, setDetail] = useState(false);
   const pagerPosition = useSharedValue(0);
+  const pagerPending = useSharedValue(-1);
   const { reduceMotion } = useAccessibility();
   const transition = useSharedValue(1);
   const navigating = useRef(false);
@@ -228,9 +229,20 @@ function ClassFlow() {
   const tabIndex = NAV.findIndex(item => item.key === tab);
   const selectTab = (next: Tab) => {
     if (detail) { navigate(next, false); return; }
-    if (next !== tab) { haptic(); setTab(next); }
+    if (next === tab) return;
+    haptic();
+    const index = NAV.findIndex(item => item.key === next);
+    if (reduceMotion || Math.abs(pagerPosition.get() - index) < 0.02) { setTab(next); return; }
+    // Slide first, commit the tab when the slide lands, so the re-render never interrupts the motion.
+    pagerPending.set(index);
+    pagerPosition.set(withSpring(index, springs.page));
   };
   const background = useMemo(() => ({ uri: appearance.background, dim: appearance.backgroundDim }), [appearance.background, appearance.backgroundDim]);
+  const cardImageLookup = useCallback((entry: Entry) => cardImageFor(appearance, entry) ?? undefined, [appearance.cardImages, appearance.cardFrost]);
+  const openEditor = useCallback((entry: Entry) => setEditor({ entry, isNew: false }), []);
+  const addLatest = useRef(add);
+  addLatest.current = add;
+  const addCourse = useCallback(() => addLatest.current('course'), []);
   const upcoming = useMemo(() => upcomingOccurrences(state.entries, state.preferences, now), [state.entries, state.preferences, now]);
   const weekControl = <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
     <Button small icon="left" label="上一周" variant="ghost" disabled={week <= 1} onPress={() => { haptic(); setWeek(week - 1); }} />
@@ -273,8 +285,8 @@ function ClassFlow() {
         <Text numberOfLines={2} style={[ui.label, { color: theme.warning, padding: 8 }]}>{storageWarning} · 点此导出备份</Text>
       </PressSurface>}
       <Animated.View style={[styles.page, pageMotion]}>
-        {!detail ? <Pager index={tabIndex} count={NAV.length} position={pagerPosition} enabled={mobile}
-          onIndexChange={index => { haptic(); setTab(NAV[index].key); }} style={{ marginHorizontal: -gutter }}>
+        {!detail ? <Pager index={tabIndex} count={NAV.length} position={pagerPosition} pending={pagerPending} enabled={mobile}
+          onIndexChange={index => setTab(NAV[index].key)} style={{ marginHorizontal: -gutter }}>
           {NAV.map(item => <View key={item.key} style={[styles.pagerPage, { paddingHorizontal: gutter }]}>
             {!landscape && <View style={styles.pageHeader}>
               <View style={{ gap: 4, flex: 1, minWidth: 0 }}>
@@ -283,7 +295,7 @@ function ClassFlow() {
               </View>
             </View>}
             {item.key === 'timetable' && <>
-              <UpNextStack items={upcoming} now={now} imageFor={entry => cardImageFor(appearance, entry) ?? undefined} onOpen={entry => setEditor({ entry, isNew: false })} onAdd={() => add('course')} />
+              <UpNextStack items={upcoming} now={now} imageFor={cardImageLookup} onOpen={openEditor} onAdd={addCourse} />
               <Button icon="calendar" label="打开完整课表" style={{ alignSelf: 'stretch' }} onPress={() => navigate('timetable', true)}>查看完整课表</Button>
             </>}
             {item.key === 'planner' && <>
@@ -393,7 +405,7 @@ function ClassFlow() {
     {mobile && !(detail && landscape) && <View pointerEvents="box-none" style={[styles.navWrap, { left: insets.left + 14, right: insets.right + 14, bottom: Math.max(insets.bottom, 10) + 4 }]}>
       <View style={styles.dockRow}>
         <LiquidGlass interactive style={styles.dockBar}>
-          <DockTabs tab={tab} position={pagerPosition} enabled={!detail} onSelect={selectTab} />
+          <DockTabs tab={tab} position={pagerPosition} pending={pagerPending} enabled={!detail} onSelect={selectTab} />
         </LiquidGlass>
         <LiquidGlass interactive accent={theme.dark ? 'rgba(150,165,255,0.92)' : 'rgba(54,75,182,0.9)'} style={styles.dockAction}>
           <PressSurface accessibilityRole="button" accessibilityLabel={tab === 'planner' ? '添加个人安排' : '添加课程'} scale={0.9} style={styles.dockActionPress}
@@ -434,7 +446,7 @@ function Brand() {
 // Bottom navigation with one liquid-glass lens. The lens follows the pager
 // while pages are swiped, can itself be dragged, and swells slightly while
 // held, like a drop of glass magnifying the tab beneath it.
-function DockTabs({ tab, position, enabled, onSelect }: { tab: Tab; position: SharedValue<number>; enabled: boolean; onSelect: (tab: Tab) => void }) {
+function DockTabs({ tab, position, pending, enabled, onSelect }: { tab: Tab; position: SharedValue<number>; pending: SharedValue<number>; enabled: boolean; onSelect: (tab: Tab) => void }) {
   const theme = useTheme();
   const { reduceMotion } = useAccessibility();
   const slot = useSharedValue(0);
@@ -452,7 +464,6 @@ function DockTabs({ tab, position, enabled, onSelect }: { tab: Tab; position: Sh
       transform: [{ translateX: p * slot.get() }, { scaleX: 1 + travel * 0.18 + lift.get() * 0.08 }, { scaleY: 1 + lift.get() * 0.14 - travel * 0.06 }],
     };
   });
-  const pick = (index: number) => onSelect(NAV[index].key);
   const tick = () => haptic('tick');
   const drag = Gesture.Pan().enabled(enabled).activeOffsetX([-8, 8]).failOffsetY([-14, 14])
     .onStart(() => {
@@ -467,8 +478,11 @@ function DockTabs({ tab, position, enabled, onSelect }: { tab: Tab; position: Sh
     })
     .onEnd(event => {
       const target = Math.max(0, Math.min(count - 1, Math.round(position.get() + event.velocityX / (slot.get() || 1) * 0.12)));
-      position.set(reduceMotion ? target : withSpring(target, springs.page));
-      scheduleOnRN(pick, target);
+      const velocity = event.velocityX / (slot.get() || 1);
+      if (target === Math.round(start.get())) { position.set(reduceMotion ? target : withSpring(target, { ...springs.page, velocity })); return; }
+      // The pager commits the page once the slide has (almost) landed.
+      pending.set(target);
+      position.set(reduceMotion ? target : withSpring(target, { ...springs.page, velocity }));
     })
     .onFinalize(() => { lift.set(reduceMotion ? 0 : withSpring(0, springs.settle)); });
   return <GestureDetector gesture={drag}>

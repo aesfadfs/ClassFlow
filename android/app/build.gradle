@@ -92,8 +92,8 @@ android {
         applicationId 'app.classflow.mobile'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "0.1.7"
+        versionCode 9
+        versionName "0.1.8"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -104,15 +104,25 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Distribution key (alias kenshi). The keystore and its passwords stay outside the
+        // repository: set CLASSFLOW_RELEASE_STORE_FILE / _STORE_PASSWORD / _KEY_ALIAS /
+        // _KEY_PASSWORD in ~/.gradle/gradle.properties (or GRADLE_USER_HOME). Without them,
+        // release builds fall back to the debug key so anyone can still build locally.
+        if (findProperty('CLASSFLOW_RELEASE_STORE_FILE')) {
+            release {
+                storeFile file(findProperty('CLASSFLOW_RELEASE_STORE_FILE'))
+                storePassword findProperty('CLASSFLOW_RELEASE_STORE_PASSWORD')
+                keyAlias findProperty('CLASSFLOW_RELEASE_KEY_ALIAS') ?: 'kenshi'
+                keyPassword findProperty('CLASSFLOW_RELEASE_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig findProperty('CLASSFLOW_RELEASE_STORE_FILE') ? signingConfigs.release : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

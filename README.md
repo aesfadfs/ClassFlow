@@ -22,7 +22,9 @@ Web 预览默认在 `http://localhost:8081`。iOS 原生开发需要 macOS 和 X
 
 ### Android 原生构建
 
-最新本地构建为 `dist/ClassFlow-Android-0.1.7-Stack.apk`（2026-11-05，versionCode 8），用法与说明见下方 0.1.4–0.1.7 一段。以下为 0.1.3 的历史记录：当时的安装包为 `dist/ClassFlow-Android-0.1.3-ImportFix.apk`（2026-11-04，versionCode 4），适用于 Android 7.0 及以上的 ARM64 设备，约 32.5 MB，并包含此前的课表识别和 UI 修复。`dist/ClassFlow-Android-ImportFix.apk` 同步指向这次构建。它包含离线运行所需的代码和内置浏览器，沿用此前的开发签名，可直接覆盖安装。
+最新分发版为 `ClassFlow-Android-0.1.8.apk`（2026-11-05，versionCode 9），在 GitHub Releases 下载，适用于 Android 7.0 及以上的 ARM64 设备。0.1.8 修复课表与规划页面切换时的卡顿：页面滑动接近落定时才切换页面状态，首页卡片不再随切换重新渲染；在浏览器 4 倍降速下，切换时最长的一帧从约 146 ms 降到约 60–80 ms，且出现在滑动收尾处。
+
+0.1.8 起正式分发版改用 kenshi 发布密钥签名，与 0.1.7 及以前的开发签名不同：已安装旧版的手机须先在「工具 → 课表备份」导出 JSON，卸载旧版后安装 0.1.8，再从「课表导入」恢复。之后的版本可直接覆盖安装。自定义背景和卡片图片不在备份中，需要重新设置。界面更新的说明见下方 0.1.4–0.1.7 一段。以下为 0.1.3 的历史记录：当时的安装包为 `dist/ClassFlow-Android-0.1.3-ImportFix.apk`（2026-11-04，versionCode 4），适用于 Android 7.0 及以上的 ARM64 设备，约 32.5 MB，并包含此前的课表识别和 UI 修复。`dist/ClassFlow-Android-ImportFix.apk` 同步指向这次构建。它包含离线运行所需的代码和内置浏览器，沿用此前的开发签名，可直接覆盖安装。
 
 0.1.4–0.1.7（2026-11-05）是界面与交互更新，课表识别和导入规则没有改动：
 
