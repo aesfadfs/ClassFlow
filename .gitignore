@@ -1,0 +1,26 @@
+node_modules/
+.pnpm-store/
+.tools/
+.npm-cache/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+*.log
+.env*
+!.env.example
+.qa/
+/ios/
+
+# Local signing material and credentials
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+credentials.json
+.aws/
+.codex/
+.agents/
+.DS_Store
+Thumbs.db
