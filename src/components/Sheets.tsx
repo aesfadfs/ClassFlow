@@ -10,6 +10,7 @@ import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 import { hainnu } from '../features/schools';
+import { version as APP_VERSION } from '../../package.json';
 import { BLUR_LEVELS, CARD_LEVELS, DIM_LEVELS, PANEL_LEVELS, type Appearance, type CardImageScope } from '../domain/appearance';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SchoolBrowser } from './SchoolBrowser';
@@ -654,6 +655,7 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
       {backupReady && <Text accessibilityLiveRegion="polite" style={styles.success}>备份文件已准备好</Text>}
       {demo && <Button variant="danger" icon="trash" onPress={onClearDemo}>清空示例课表</Button>}
     </View>
+    <Text testID="about-publisher" style={[ui.label, { textAlign: 'center', paddingVertical: 8 }]}>课序 ClassFlow {APP_VERSION} · Inno-Mon Studio 出品</Text>
   </Sheet>;
 }
 

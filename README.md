@@ -4,6 +4,8 @@
 
 安排课程，也为自己留一点空白。
 
+由 **Inno-Mon Studio** 开发与发行。
+
 朋友加入私有仓库、下载运行及提交修改，请阅读 [朋友协作指南](CONTRIBUTING.md)。GitHub 仓库保留 Android 工程，但不包含签名密钥；现有 APK 从仓库 Releases 下载。下文 `dist/` 路径指本地构建或下载后的位置。
 
 换电脑或让 Claude 接手，请先阅读 [迁移与开发交接说明](HANDOFF.md) 和 [AI 开发约定](CLAUDE.md)。
@@ -24,7 +26,7 @@ Web 预览默认在 `http://localhost:8081`。iOS 原生开发需要 macOS 和 X
 
 ### Android 原生构建
 
-最新分发版为 `ClassFlow-Android-0.1.9.apk`（2026-11-05，versionCode 10），在 GitHub Releases 下载，适用于 Android 7.0 及以上的 ARM64 设备，可直接覆盖安装 0.1.8。
+最新分发版为 `ClassFlow-Android-0.1.10.apk`（versionCode 11，由 Inno-Mon Studio 发行，可直接覆盖安装 0.1.8 / 0.1.9），在 GitHub / Gitee Releases 下载。以下为 0.1.9 的说明：`ClassFlow-Android-0.1.9.apk`（2026-11-05，versionCode 10），适用于 Android 7.0 及以上的 ARM64 设备，可直接覆盖安装 0.1.8。
 
 0.1.9 让界面更通透：面板和课程卡片默认只有一层薄雾化，能看清背景图，玻璃边缘带柔和光晕；「偏好设置 → 外观与操作」可调界面透明度（通透 / 适中 / 朦胧）、雾化强度（无 / 轻 / 中 / 重）、课程卡片浓淡（通透 / 适中 / 浓郁）、边缘光晕和背景遮罩（无 / 浅 / 中 / 深，新默认为浅）。开屏遮罩按早上 / 中午 / 下午 / 晚上各有 4 组配色，所有配色都通过白字对比度测试；揭开方式改为从问候语处亮起一道光，再沿文字上下撕开。
 
