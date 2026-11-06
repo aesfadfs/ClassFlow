@@ -7,7 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { describeOccurrence, formatTime, type Entry, type Occurrence } from '../domain/schedule';
 import { haptic, Icon, PRESS_DELAY, useAccessibility, useTapGuard, useUI } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
-import { Backdrop, useGlass, useScreenOffset } from '../ui/glass';
+import { Backdrop, fontFamily, useGlass, useScreenOffset } from '../ui/glass';
 import { STACK, anchoredIndex, settleIndex, stackPose } from '../ui/stackMath';
 
 const RATIO = 1.45;       // close to bank card proportions, a little taller for text
@@ -200,6 +200,9 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
   const squish = useSharedValue(1);
   const pressedAt = useRef(0);
   const look = useGlass();
+  const px = look.style === 'pixel';
+  // Text: the chosen font; pixel style adds a hard one-step shadow.
+  const ink = [{ fontFamily: fontFamily(look.font) }, px && styles.pixelText];
   const motion = useAnimatedStyle(() => {
     const pose = stackPose(index - position.get(), index, step);
     return { zIndex: pose.zIndex, transform: [{ translateY: pose.translateY }, { scale: pose.scale }] };
@@ -229,7 +232,7 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
     importantForAccessibility={front ? 'auto' : 'no-hide-descendants'}
     style={[styles.card, { width, height, left, transformOrigin: 'center top' }, motion]}>
     <Animated.View style={[{ flex: 1 }, press]}>
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.shadow, look.glow && glass && { boxShadow: `0 12px 28px rgba(20,30,70,0.18), 0 0 22px rgba(${GLASS[entry.color][0]},0.45)` }, fade]} />
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.shadow, px && styles.pixelShadow, !px && look.glow && glass && { boxShadow: `0 12px 28px rgba(20,30,70,0.18), 0 0 22px rgba(${GLASS[entry.color][0]},0.45)` }, fade]} />
       <Animated.View needsOffscreenAlphaCompositing style={[{ flex: 1 }, fade]}>
         <Pressable accessibilityRole="button" accessibilityLabel={`${plan ? '待办' : '课程'}，${entry.title}`} accessibilityHint="长按编辑"
           unstable_pressDelay={Platform.OS === 'web' ? undefined : PRESS_DELAY} delayLongPress={420}
@@ -237,41 +240,47 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
           onPressOut={() => release(true)}
           onPress={event => { if (tap.isTap(event)) onPress(); }}
           onLongPress={() => { release(false); onLongPress(); }} style={{ flex: 1 }}>
-          <View style={[styles.face, { padding: compact ? 14 : 20 }]}>
+          <View style={[styles.face, { padding: compact ? 14 : 20 }, px && styles.pixelFace]}>
             {/* Frosted base: the page background, blurred and lined up with the screen, so the card reads as glass. */}
-            {glass ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, backdrop]}><Backdrop offset={frame} /></Animated.View> : null}
+            {glass && !px ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, backdrop]}><Backdrop offset={frame} /></Animated.View> : null}
             {image ? <>
               <Image testID="card-image" source={{ uri: image.uri }} blurRadius={image.frost ? Math.max(6, look.blur) : 0} resizeMode="cover" style={StyleSheet.absoluteFill} />
               {image.frost && <View testID="card-frost" pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />}
               {/* Scrim keeps white text readable on any photo. */}
               <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.35)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0.6)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} />
-            </> : <LinearGradient pointerEvents="none" colors={glass ? glassTint(entry.color, look.card) : GRADIENTS[entry.color]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
-            {!image && <View pointerEvents="none" style={[styles.orb, { width: height * 1.1, height: height * 1.1, borderRadius: height, right: -height * 0.45, top: -height * 0.55 }]} />}
-            {!image && <View pointerEvents="none" style={[styles.orb, { width: height * 0.7, height: height * 0.7, borderRadius: height, right: height * 0.2, bottom: -height * 0.45 }]} />}
+            </> : px
+              // Pixel block: two flat bands of the course colour instead of a gradient.
+              ? <LinearGradient pointerEvents="none" colors={[GRADIENTS[entry.color][0], GRADIENTS[entry.color][0], GRADIENTS[entry.color][1], GRADIENTS[entry.color][1]]} locations={[0, 0.64, 0.64, 1]} style={StyleSheet.absoluteFill} />
+              : <LinearGradient pointerEvents="none" colors={glass ? glassTint(entry.color, look.card) : GRADIENTS[entry.color]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
+            {px && !image && <View pointerEvents="none" style={styles.pixelSparkle}>
+              {[[0, 0], [12, 0], [0, 12], [24, 12], [12, 24]].map(([x, y]) => <View key={`${x}-${y}`} style={[styles.pixelDot, { left: x, top: y }]} />)}
+            </View>}
+            {!px && !image && <View pointerEvents="none" style={[styles.orb, { width: height * 1.1, height: height * 1.1, borderRadius: height, right: -height * 0.45, top: -height * 0.55 }]} />}
+            {!px && !image && <View pointerEvents="none" style={[styles.orb, { width: height * 0.7, height: height * 0.7, borderRadius: height, right: height * 0.2, bottom: -height * 0.45 }]} />}
             {/* Glass sheen and rim. */}
-            <LinearGradient pointerEvents="none" colors={['rgba(255,255,255,0.26)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.06)']} locations={[0, 0.42, 1]} style={StyleSheet.absoluteFill} />
+            {!px && <LinearGradient pointerEvents="none" colors={['rgba(255,255,255,0.26)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.06)']} locations={[0, 0.42, 1]} style={StyleSheet.absoluteFill} />}
             <Animated.View style={[styles.content, content]}>
               {!tiny && <View style={styles.topRow}>
-                <View style={styles.badge}>
+                <View style={[styles.badge, px && styles.pixelBadge]}>
                   <Icon name={plan ? 'leaf' : 'book'} size={13} color="#ffffff" />
-                  <Text style={styles.badgeText}>{plan ? '待办' : '课程'}</Text>
+                  <Text style={[styles.badgeText, ...ink]}>{plan ? '待办' : '课程'}</Text>
                 </View>
-                <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={[styles.status, { flexShrink: 1 }]}>{info.status}</Text>
+                <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={[styles.status, { flexShrink: 1 }, ...ink]}>{info.status}</Text>
               </View>}
-              <Text numberOfLines={compact ? 1 : 2} maxFontSizeMultiplier={1.25} style={[styles.title, { fontSize: compact ? 19 : 24, marginTop: tiny ? 0 : 4 }]}>{entry.title}</Text>
+              <Text numberOfLines={compact ? 1 : 2} maxFontSizeMultiplier={1.25} style={[styles.title, { fontSize: compact ? 19 : 24, marginTop: tiny ? 0 : 4 }, ...ink]}>{entry.title}</Text>
               <View style={{ flex: 1 }} />
-              <Text maxFontSizeMultiplier={1.2} style={[styles.time, { fontSize: compact ? 20 : 27 }]}>{time}</Text>
+              <Text maxFontSizeMultiplier={1.2} style={[styles.time, { fontSize: compact ? 20 : 27 }, ...ink]}>{time}</Text>
               {info.progress !== null && <View style={styles.progress}><View style={[styles.progressFill, { width: `${Math.round(info.progress * 100)}%` }]} /></View>}
               <View style={styles.bottomRow}>
                 <View style={[styles.meta, { flex: 1 }]}>
                   {!!entry.location && <Icon name="pin" size={13} color="rgba(255,255,255,0.85)" />}
-                  <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={styles.metaText}>{[entry.location, entry.teacher].filter(Boolean).join(' · ') || (plan ? '个人安排' : '课程')}</Text>
+                  <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={[styles.metaText, ...ink]}>{[entry.location, entry.teacher].filter(Boolean).join(' · ') || (plan ? '个人安排' : '课程')}</Text>
                 </View>
-                <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={styles.metaText}>{tiny ? info.status : `${info.dateLabel} · 第 ${item.week} 周`}</Text>
+                <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={[styles.metaText, ...ink]}>{tiny ? info.status : `${info.dateLabel} · 第 ${item.week} 周`}</Text>
               </View>
             </Animated.View>
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.shade, shade]} />
-            <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.rim, look.glow && styles.glow]} />
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.rim, !px && look.glow && styles.glow, px && styles.pixelRim]} />
           </View>
         </Pressable>
       </Animated.View>
@@ -287,6 +296,14 @@ const styles = StyleSheet.create({
   shadow: { borderRadius: metrics.radius.lg, boxShadow: '0 12px 28px rgba(20,30,70,0.24)' },
   rim: { borderRadius: metrics.radius.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.42)' },
   // Edge light: a brighter rim with a soft inner halo, like light caught in the glass edge.
+  // Pixel style: square corners, thick dark outline with a bevel, hard drop shadow, blocky sparkle.
+  pixelFace: { borderRadius: 4 },
+  pixelShadow: { borderRadius: 4, boxShadow: '5px 5px 0 rgba(0,0,0,0.32)' },
+  pixelRim: { borderRadius: 4, borderWidth: 3, borderColor: 'rgba(20,16,30,0.7)', boxShadow: 'inset 3px 3px 0 rgba(255,255,255,0.35), inset -3px -3px 0 rgba(0,0,0,0.22)' },
+  pixelBadge: { borderRadius: 2 },
+  pixelText: { textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 2, height: 2 }, textShadowRadius: 0 },
+  pixelSparkle: { position: 'absolute', bottom: '38%', right: 20, width: 36, height: 36, marginBottom: 10, opacity: 0.3 },
+  pixelDot: { position: 'absolute', width: 12, height: 12, backgroundColor: '#ffffff' },
   glow: { borderColor: 'rgba(255,255,255,0.75)', boxShadow: 'inset 0 0 16px rgba(255,255,255,0.38), inset 0 1px 0 rgba(255,255,255,0.7)' },
   face: { flex: 1, borderRadius: metrics.radius.lg, overflow: 'hidden', gap: 6 },
   orb: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.09)' },

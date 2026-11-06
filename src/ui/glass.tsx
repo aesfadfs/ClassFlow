@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useId, useRef, useState } from 'react';
-import { Image, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
-import Svg, { Circle, Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { Image, Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import Svg, { Circle, Defs, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useAccessibility } from './primitives';
 import { useTheme, type Theme } from './theme';
 
@@ -12,8 +12,51 @@ export const BackgroundContext = createContext<{ uri: string | null; dim: number
  * photo behind glass is blurred, how strongly cards are tinted, and the soft
  * light glow along glass edges.
  */
-export type GlassLook = { panel: number; blur: number; card: number; glow: boolean };
-export const DEFAULT_GLASS: GlassLook = { panel: 0.3, blur: 12, card: 0.4, glow: true };
+export type GlassLook = { panel: number; blur: number; card: number; glow: boolean; style: 'glass' | 'pixel'; font: 'system' | 'serif' | 'mono' };
+export const DEFAULT_GLASS: GlassLook = { panel: 0.3, blur: 12, card: 0.4, glow: true, style: 'glass', font: 'system' };
+
+/** Font family for the chosen face; system fonts only, so Chinese text always has glyphs. */
+export function fontFamily(font: GlassLook['font']): string | undefined {
+  if (font === 'serif') return Platform.select({ ios: 'Songti SC', android: 'serif', default: 'serif' });
+  if (font === 'mono') return Platform.select({ ios: 'Menlo', android: 'monospace', default: 'ui-monospace, Menlo, Consolas, monospace' });
+  return undefined;
+}
+/** Style fragment that applies the chosen font (empty for the system font). */
+export function useFont() {
+  const { font } = useContext(GlassContext);
+  const family = fontFamily(font);
+  return family ? { fontFamily: family } : null;
+}
+
+// Pixel style: square-ish corners, thick outlines, a bevel (light top-left, dark bottom-right) and hard drop shadows.
+export const PIXEL = { radius: 3, border: 3 };
+export const pixelShadow = (theme: Theme, size = 4) => theme.dark
+  ? `inset 3px 3px 0 rgba(255,255,255,0.10), inset -3px -3px 0 rgba(0,0,0,0.35), ${size}px ${size}px 0 rgba(0,0,0,0.55)`
+  : `inset 3px 3px 0 rgba(255,255,255,0.65), inset -3px -3px 0 rgba(0,0,0,0.14), ${size}px ${size}px 0 rgba(40,32,24,0.28)`;
+
+const PIXEL_TILES = {
+  light: ['#d9d4c7', '#d2ccbe', '#e0dbcf', '#cdc6b6'],
+  dark: ['#25272d', '#2a2c33', '#212328', '#2e3038'],
+};
+/** A calm block-grid background for the pixel style (an original tile, repeated). */
+export function PixelBackdrop() {
+  const theme = useTheme();
+  const id = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const tiles = PIXEL_TILES[theme.dark ? 'dark' : 'light'];
+  const cell = 24, size = cell * 4;
+  // Fixed shade order per 4x4 tile so neighbouring blocks never look stripy.
+  const order = [0, 2, 1, 3, 1, 3, 0, 2, 2, 0, 3, 1, 3, 1, 2, 0];
+  return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tiles[0] }]}>
+    <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+      <Defs>
+        <Pattern id={`${id}px`} x="0" y="0" width={size} height={size} patternUnits="userSpaceOnUse">
+          {order.map((shade, index) => <Rect key={index} x={(index % 4) * cell} y={Math.floor(index / 4) * cell} width={cell} height={cell} fill={tiles[shade]} />)}
+        </Pattern>
+      </Defs>
+      <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${id}px)`} />
+    </Svg>
+  </View>;
+}
 export const GlassContext = createContext<GlassLook>(DEFAULT_GLASS);
 export const useGlass = () => useContext(GlassContext);
 
@@ -53,7 +96,8 @@ export function Ambient() {
 export function AppBackground({ blur = 0, testID }: { blur?: number; testID?: string }) {
   const theme = useTheme();
   const { uri, dim } = useContext(BackgroundContext);
-  if (!uri) return <Ambient />;
+  const { style } = useContext(GlassContext);
+  if (!uri) return style === 'pixel' ? <PixelBackdrop /> : <Ambient />;
   return <View testID={testID} pointerEvents="none" style={StyleSheet.absoluteFill}>
     <Image source={{ uri }} blurRadius={blur} resizeMode="cover" style={StyleSheet.absoluteFill} />
     <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.bg, opacity: dim }]} />
@@ -89,6 +133,11 @@ export function Backdrop({ offset, blur }: { offset: { x: number; y: number }; b
 }
 
 export function frost(theme: Theme, strong = false, look: GlassLook = DEFAULT_GLASS) {
+  if (look.style === 'pixel') {
+    return theme.dark
+      ? { fill: strong ? '#353840' : '#3b3e47', rim: '#101115', shadow: pixelShadow(theme) }
+      : { fill: strong ? '#f6f1e4' : '#efe8d6', rim: '#3a332b', shadow: pixelShadow(theme) };
+  }
   // Strong surfaces (the timetable grid) stay more opaque so dense text is readable.
   const alpha = Math.round((strong ? Math.min(0.86, look.panel + 0.38) : look.panel) * 100) / 100;
   return theme.dark
@@ -109,7 +158,8 @@ export function GlassFill({ radius, strong = false }: { radius: number; strong?:
   const { reduceTransparency } = useAccessibility();
   const look = useGlass();
   const { ref, onLayout, offset } = useScreenOffset();
-  if (!uri || reduceTransparency) return null;
+  // Pixel surfaces are solid blocks: no frosted photo underneath.
+  if (!uri || reduceTransparency || look.style === 'pixel') return null;
   return <View ref={ref} onLayout={onLayout} pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]}>
     <Backdrop offset={offset} />
     <View style={[StyleSheet.absoluteFill, { backgroundColor: frost(theme, strong, look).fill }]} />

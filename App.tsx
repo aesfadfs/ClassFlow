@@ -10,18 +10,19 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Calendar, DayStrip } from './src/components/Calendar';
 import { EntrySheet, ImportSheet, SettingsSheet } from './src/components/Sheets';
-import { COLORS, DAYS, createEntry, dateKey, parseTime, dayOfWeek, emptyState, restoreScheduleState, entriesForDay, upcomingOccurrences, entriesForWeek, formatTime, freeWindows, isScheduleState, weekDates, weekNumber, type Entry, type Preferences, type ScheduleState } from './src/domain/schedule';
+import { COLORS, DAYS, createEntry, dateKey, parseTime, uid, dayOfWeek, emptyState, restoreScheduleState, entriesForDay, upcomingOccurrences, entriesForWeek, formatTime, freeWindows, isScheduleState, weekDates, weekNumber, type Entry, type Preferences, type ScheduleState } from './src/domain/schedule';
 import { analyzeImport } from './src/domain/import';
 import { exportText } from './src/services/files';
 import { cleanUpImages, pickImage } from './src/services/images';
 import { requestReminderPermission, sendTestReminder, syncReminders } from './src/services/notifications';
 import { planReminders } from './src/domain/reminders';
 import { hainnu } from './src/features/schools';
-import { APPEARANCE_KEY, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
+import { APPEARANCE_KEY, applyPreset, deletePreset, savePreset, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
 import { AccessibilityProvider, BlurTargetContext, Button, Icon, LiquidGlass, PressSurface, Reveal, haptic, setHapticsEnabled, useAccessibility, useUI, type IconName } from './src/ui/primitives';
 import { metrics, springs, useTheme } from './src/ui/theme';
-import { AppBackground, BackgroundContext, GlassContext, GlassFill, frost } from './src/ui/glass';
+import { AppBackground, BackgroundContext, GlassContext, GlassFill, fontFamily, frost, useGlass } from './src/ui/glass';
 import { GreetingCurtain } from './src/components/Greeting';
+import { LookSheet } from './src/components/LookSheet';
 
 const STORAGE_KEY = 'classflow.schedule.v1';
 type Tab = 'timetable' | 'planner' | 'tools';
@@ -62,7 +63,7 @@ function ClassFlow() {
   const pageMotion = useAnimatedStyle(() => ({ opacity: transition.get(), transform: [{ translateY: (1 - transition.get()) * 12 }, { scale: 0.99 + transition.get() * 0.01 }] }));
   const [editor, setEditor] = useState<{ entry: Entry; isNew: boolean } | null>(null);
   const [editorClosing, setEditorClosing] = useState(false);
-  const [sheet, setSheet] = useState<'import' | 'settings' | null>(null);
+  const [sheet, setSheet] = useState<'import' | 'settings' | 'look' | null>(null);
   const [sheetClosing, setSheetClosing] = useState(false);
   const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null);
   const [storageWarning, setStorageWarning] = useState('');
@@ -252,7 +253,10 @@ function ClassFlow() {
     pagerPending.set(index);
     pagerPosition.set(withSpring(index, springs.page));
   };
-  const glassLook = useMemo(() => ({ panel: appearance.glassPanel, blur: appearance.glassBlur, card: appearance.glassCard, glow: appearance.glow }), [appearance.glassPanel, appearance.glassBlur, appearance.glassCard, appearance.glow]);
+  const glassLook = useMemo(() => ({ panel: appearance.glassPanel, blur: appearance.glassBlur, card: appearance.glassCard, glow: appearance.glow, style: appearance.uiStyle, font: appearance.font }),
+    [appearance.glassPanel, appearance.glassBlur, appearance.glassCard, appearance.glow, appearance.uiStyle, appearance.font]);
+  const pixel = appearance.uiStyle === 'pixel';
+  const face = fontFamily(appearance.font);
   const ui = useUI(glassLook);
   // Keep a week of class reminders scheduled: after any timetable or setting change, and whenever the app comes back.
   const reminderSettings = appearance.reminders;
@@ -320,7 +324,7 @@ function ClassFlow() {
           {NAV.map(item => <View key={item.key} style={[styles.pagerPage, { paddingHorizontal: gutter }]}>
             {!landscape && <View style={styles.pageHeader}>
               <View style={{ gap: 4, flex: 1, minWidth: 0 }}>
-                <Text accessibilityRole="header" maxFontSizeMultiplier={1.3} style={[styles.heading, { color: theme.ink, fontSize: compactHeight ? 24 : 30 }]}>{item.title}</Text>
+                <Text accessibilityRole="header" maxFontSizeMultiplier={1.3} style={[styles.heading, { color: theme.ink, fontSize: compactHeight ? 24 : 30, fontFamily: face }, pixel && styles.pixelHeading]}>{item.title}</Text>
                 <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={ui.label}>{item.key === 'timetable' ? '本周 ' + courses.length + ' 节课程 · ' + plans.length + ' 项个人安排' + (state.demo ? ' · 示例' : '') : item.key === 'planner' ? '留一点时间，给自己的计划' : '导入、备份与学期设置'}</Text>
               </View>
             </View>}
@@ -352,6 +356,7 @@ function ClassFlow() {
               {([
                 { icon: 'import', title: '课表导入', detail: '登录学校教务自动识别，或导入课表文件', action: () => setSheet('import') },
                 { icon: 'file', title: '课表备份', detail: '导出课程、个人安排和学期设置', action: exportBackup },
+                { icon: 'sparkles', title: '界面风格', detail: '一键切换预设，或保存自己的风格与字体', action: () => setSheet('look') },
                 { icon: 'settings', title: '偏好设置', detail: '管理学期起始日期与周数', action: () => setSheet('settings') },
               ] satisfies { icon: IconName; title: string; detail: string; action?: () => void }[]).map(tool => {
                 const row = <View style={[styles.toolRow, { padding: compactHeight ? 12 : 16, minHeight: compactHeight ? 60 : 80, flexDirection: landscape ? 'column' : 'row' }]}>
@@ -442,7 +447,7 @@ function ClassFlow() {
           <DockTabs tab={tab} position={pagerPosition} pending={pagerPending} enabled={!detail} onSelect={selectTab} />
         </LiquidGlass>
         <LiquidGlass interactive accent={theme.dark ? 'rgba(150,165,255,0.92)' : 'rgba(54,75,182,0.9)'} style={styles.dockAction}>
-          <PressSurface accessibilityRole="button" accessibilityLabel={tab === 'planner' ? '添加个人安排' : '添加课程'} scale={0.9} style={styles.dockActionPress}
+          <PressSurface accessibilityRole="button" accessibilityLabel={tab === 'planner' ? '添加个人安排' : '添加课程'} scale={0.9} style={[styles.dockActionPress, pixel && { borderRadius: 0 }]}
             onPress={() => { haptic('medium'); add(tab === 'planner' ? 'plan' : 'course'); }}>
             <Icon name="plus" size={26} strokeWidth={2.2} color={theme.onAccent} />
           </PressSurface>
@@ -461,6 +466,10 @@ function ClassFlow() {
     </View>}
     {editor && <EntrySheet key={editor.entry.id} {...editor} closingRequested={editorClosing} entries={state.entries} semesterWeeks={state.preferences.semesterWeeks} onClose={() => setEditor(null)} onSave={saveEntry} onDelete={deleteEntry}
       cardImage={cardImageFor(appearance, editor.entry)} onPickImage={() => chooseImage('card')} />}
+    {sheet === 'look' && <LookSheet closingRequested={sheetClosing} appearance={appearance} onClose={() => setSheet(null)} onAppearance={updateAppearance}
+      onApply={preset => setAppearance(current => applyPreset(current, preset))}
+      onSavePreset={name => { try { setAppearance(current => savePreset(current, name, `custom:${uid()}`)); notify(`已保存预设「${name.trim().slice(0, 20)}」`); return null; } catch (error) { return error instanceof Error ? error.message : '保存失败'; } }}
+      onDeletePreset={id => { const previous = appearance; setAppearance(current => deletePreset(current, id)); setToast({ message: '已删除预设', undo: () => { setAppearance(previous); setToast(null); } }); }} />}
     {sheet === 'import' && <ImportSheet closingRequested={sheetClosing} semesterWeeks={state.preferences.semesterWeeks} existingEntries={state.entries} demo={state.demo} onClose={() => setSheet(null)} onImport={importEntries} />}
     {sheet === 'settings' && <SettingsSheet closingRequested={sheetClosing} preferences={state.preferences} onSave={savePreferences} onClose={() => setSheet(null)} onExport={writeBackup} demo={state.demo} onClearDemo={clearDemo}
       appearance={appearance} onAppearance={updateAppearance} onPickBackground={() => chooseImage('background')} onEnableReminders={enableReminders}
@@ -472,7 +481,7 @@ function Brand() {
   const theme = useTheme();
   return <View style={styles.brand}>
     <View style={[styles.mark, { backgroundColor: theme.blue }]}><Icon name="calendar" size={21} color={theme.onAccent} /></View>
-    <Text style={{ fontSize: 20, fontWeight: '700', color: theme.ink }}>课序</Text>
+    <Text style={{ fontSize: 20, fontWeight: '700', color: theme.ink, fontFamily: fontFamily(useGlass().font) }}>课序</Text>
   </View>;
 }
 
@@ -483,6 +492,7 @@ function Brand() {
 // held, like a drop of glass magnifying the tab beneath it.
 function DockTabs({ tab, position, pending, enabled, onSelect }: { tab: Tab; position: SharedValue<number>; pending: SharedValue<number>; enabled: boolean; onSelect: (tab: Tab) => void }) {
   const theme = useTheme();
+  const pixel = useGlass().style === 'pixel';
   const { reduceMotion } = useAccessibility();
   const slot = useSharedValue(0);
   const start = useSharedValue(0);
@@ -526,7 +536,7 @@ function DockTabs({ tab, position, pending, enabled, onSelect }: { tab: Tab; pos
         backgroundColor: theme.dark ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.72)',
         borderColor: theme.dark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.95)',
         boxShadow: theme.dark ? '0 2px 10px rgba(0,0,0,0.35)' : '0 2px 10px rgba(40,60,120,0.14)',
-      }, lens]} />
+      }, pixel && { borderRadius: 2, borderWidth: 2, borderColor: theme.dark ? '#101115' : '#3a332b', backgroundColor: theme.dark ? '#555a66' : '#fffaf0', boxShadow: 'inset -2px -2px 0 rgba(0,0,0,0.18)' }, lens]} />
       {NAV.map(item => <NavItem key={item.key} item={item} compact plain selected={tab === item.key} onPress={() => onSelect(item.key)} />)}
     </View>
   </GestureDetector>;
@@ -534,6 +544,7 @@ function DockTabs({ tab, position, pending, enabled, onSelect }: { tab: Tab; pos
 
 function NavItem({ item, compact, plain, selected, onPress }: { item: typeof NAV[number]; compact?: boolean; plain?: boolean; selected: boolean; onPress: () => void }) {
   const theme = useTheme();
+  const family = fontFamily(useGlass().font);
   const { reduceMotion } = useAccessibility();
   const active = useSharedValue(selected && !plain ? 1 : 0);
   useEffect(() => {
@@ -549,7 +560,7 @@ function NavItem({ item, compact, plain, selected, onPress }: { item: typeof NAV
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, highlight, { backgroundColor: theme.tint, borderRadius: metrics.radius.md }]} />
     <View style={[styles.navItem, compact && styles.compactNavItem]}>
       <Icon name={item.icon} size={21} color={color} />
-      <Text numberOfLines={1} style={{ fontSize: compact ? 11 : 14, color, fontWeight: selected ? '700' : '500' }}>
+      <Text numberOfLines={1} style={{ fontSize: compact ? 11 : 14, color, fontWeight: selected ? '700' : '500', fontFamily: family }}>
         {compact ? item.key === 'timetable' ? '课表' : item.key === 'planner' ? '规划' : '工具' : item.title}
       </Text>
     </View>
@@ -575,6 +586,8 @@ const styles = StyleSheet.create({
   dockTabs: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   dockLens: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: metrics.radius.full, borderWidth: 1 },
   pageHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, paddingBottom: 4 },
+  // Pixel style: a hard offset text shadow instead of a soft one.
+  pixelHeading: { textShadowColor: 'rgba(0,0,0,0.18)', textShadowOffset: { width: 2, height: 2 }, textShadowRadius: 0, letterSpacing: 1 },
   heading: { fontWeight: '700', letterSpacing: -0.6 },
   notice: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', minHeight: metrics.touch, paddingHorizontal: 12, gap: 8, borderRadius: metrics.radius.md },
   workspace: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },

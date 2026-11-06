@@ -38,7 +38,7 @@ npm run preview:web
 
 ## 3. 当前实现和关键文件
 
-当前版本为 0.1.13 / Android versionCode 14，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
+当前版本为 0.1.14 / Android versionCode 15，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
 
 已实现课表概览、周 / 日时间画布、课程与个人安排的增删改、拖动和时长调整、冲突提示、撤销、本地保存、JSON 备份、学期设置、CSV / HTML / JSON 导入和原生学校浏览器。支持浅色 / 深色与响应式布局。“拍照翻译”目前只是未来功能入口。
 

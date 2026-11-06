@@ -305,3 +305,29 @@ test('picked weeks are stored as a range, odd/even weeks or an explicit list', a
     assert.equal(validateEntry({ ...entry, ...weekRule(picked) }, 20), null);
   }
 });
+
+test('look presets: built-in glass and pixel, saved custom looks, safe restore', async () => {
+  const { BUILTIN_PRESETS, applyPreset, matchesPreset, savePreset, deletePreset, defaultAppearance, restoreAppearance, referencedImages } = await import('../src/domain/appearance.ts');
+  const [glass, pixel] = BUILTIN_PRESETS;
+  const start = { ...defaultAppearance(), background: 'file:///images/bg.jpg' };
+  assert.ok(matchesPreset(start, glass), 'the current default UI is preset 1');
+  const pixelated = applyPreset(start, pixel);
+  assert.equal(pixelated.uiStyle, 'pixel');
+  assert.equal(pixelated.font, 'mono');
+  assert.equal(pixelated.background, 'file:///images/bg.jpg', 'built-in presets keep the photo');
+  assert.ok(matchesPreset(pixelated, pixel) && !matchesPreset(pixelated, glass));
+  // A saved look remembers the photo too and can be applied back.
+  const mine = savePreset({ ...pixelated, font: 'serif' }, '  我的像素  ', 'custom:a1');
+  const preset = mine.presets[0];
+  assert.deepEqual([preset.name, preset.font, preset.background], ['我的像素', 'serif', 'file:///images/bg.jpg']);
+  const back = applyPreset({ ...applyPreset(mine, glass), background: null }, preset);
+  assert.ok(matchesPreset(back, preset));
+  assert.equal(back.background, 'file:///images/bg.jpg');
+  assert.ok(referencedImages({ ...back, background: null }).has('file:///images/bg.jpg'), 'saved preset photos are kept on disk');
+  assert.throws(() => savePreset(mine, '   ', 'custom:a2'), /名字/);
+  assert.deepEqual(deletePreset(mine, 'custom:a1').presets, []);
+  // Restore: only sane presets survive.
+  const restored = restoreAppearance(JSON.stringify({ ...mine, presets: [...mine.presets, { id: 'evil', name: 'x' }, { id: 'custom:b', name: '暗色', uiStyle: 'neon', font: 'comic' }] }));
+  assert.deepEqual(restored.presets.map(item => [item.id, item.uiStyle, item.font]), [['custom:a1', 'pixel', 'serif'], ['custom:b', 'glass', 'system']]);
+  assert.equal(restoreAppearance(JSON.stringify({ uiStyle: 'pixel', font: 'mono' })).uiStyle, 'pixel');
+});

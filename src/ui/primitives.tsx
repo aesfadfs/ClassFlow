@@ -9,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { metrics, springs, useTheme } from './theme';
-import { frost, useGlass, type GlassLook } from './glass';
+import { PIXEL, fontFamily, frost, pixelShadow, useGlass, type GlassLook } from './glass';
 
 const AccessibilityContext = createContext({ reduceMotion: false, reduceTransparency: false });
 export const useAccessibility = () => useContext(AccessibilityContext);
@@ -109,6 +109,12 @@ export function LiquidGlass({ children, style, radius = metrics.radius.full, int
   const theme = useTheme();
   const { reduceTransparency } = useAccessibility();
   const blurTarget = useContext(BlurTargetContext);
+  const look = useGlass();
+  if (look.style === 'pixel') {
+    // Pixel dock: a solid block with an outline, bevel and hard shadow.
+    const block = frost(theme, false, look);
+    return <View style={[{ borderRadius: PIXEL.radius, borderWidth: PIXEL.border, borderColor: block.rim, backgroundColor: accent ? (theme.dark ? '#5f6fd6' : '#3d55c4') : block.fill, boxShadow: pixelShadow(theme, 5) }, style]}>{children}</View>;
+  }
   const shadow = { borderRadius: radius, boxShadow: theme.dark ? '0 10px 30px rgba(0,0,0,0.45)' : '0 10px 30px rgba(30,45,90,0.16), 0 1px 3px rgba(30,45,90,0.10)' };
   if (!reduceTransparency && Platform.OS === 'ios' && isLiquidGlassAvailable() && isGlassEffectAPIAvailable()) {
     return <GlassView glassEffectStyle="regular" isInteractive={interactive} tintColor={accent} style={[shadow, { overflow: 'hidden' }, style]}>{children}</GlassView>;
@@ -198,13 +204,18 @@ export function Button({ children, onPress, icon, label, variant = 'glass', styl
   const theme = useTheme();
   const color = variant === 'primary' ? theme.onAccent : variant === 'danger' ? theme.danger : selected ? theme.blue : theme.ink;
   const { reduceTransparency } = useAccessibility();
-  const glass = frost(theme, false, useGlass());
+  const look = useGlass();
+  const glass = frost(theme, false, look);
+  const pixel = look.style === 'pixel';
+  const family = fontFamily(look.font);
   const backgroundColor = variant === 'primary' ? theme.blue : variant === 'danger' ? theme.dangerBg : selected ? theme.tint : variant === 'glass' ? (reduceTransparency ? theme.raised : glass.fill) : 'transparent';
   return <PressSurface accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled, selected }} disabled={disabled}
-    onPress={onPress} style={[{ flexShrink: 0, alignSelf: 'center', borderRadius: metrics.radius.md, backgroundColor, borderWidth: variant === 'glass' ? 1 : 0, borderColor: selected ? theme.accentLine : reduceTransparency ? theme.line : glass.rim }, style]}>
+    onPress={onPress} style={[{ flexShrink: 0, alignSelf: 'center', borderRadius: metrics.radius.md, backgroundColor, borderWidth: variant === 'glass' ? 1 : 0, borderColor: selected ? theme.accentLine : reduceTransparency ? theme.line : glass.rim },
+      pixel && variant !== 'ghost' && { borderRadius: PIXEL.radius, borderWidth: 2, borderColor: variant === 'primary' ? '#1d2659' : glass.rim, boxShadow: pixelShadow(theme, 3) },
+      pixel && variant === 'ghost' && { borderRadius: PIXEL.radius }, style]}>
     <View style={{ minHeight: metrics.touch, width: children ? undefined : metrics.touch, paddingHorizontal: children ? (small ? 12 : 16) : 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
       {icon && <Icon name={icon} size={small ? 17 : 19} color={color} />}
-      {typeof children === 'string' ? <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ fontSize: small ? 13 : 14, fontWeight: '600', color }}>{children}</Text> : children}
+      {typeof children === 'string' ? <Text maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ fontSize: small ? 13 : 14, fontWeight: '600', color, fontFamily: family }}>{children}</Text> : children}
     </View>
   </PressSurface>;
 }
@@ -230,12 +241,13 @@ export function useUI(override?: GlassLook) {
   const look = override ?? context;
   return useMemo(() => StyleSheet.create({
     row: { flexDirection: 'row', alignItems: 'center' },
-    label: { fontSize: metrics.type.caption, color: theme.muted },
-    body: { fontSize: metrics.type.label, lineHeight: 22, color: theme.secondary },
-    title: { color: theme.ink, fontWeight: '600', fontSize: metrics.type.title },
+    label: { fontSize: metrics.type.caption, color: theme.muted, fontFamily: fontFamily(look.font) },
+    body: { fontSize: metrics.type.label, lineHeight: 22, color: theme.secondary, fontFamily: fontFamily(look.font) },
+    title: { color: theme.ink, fontWeight: '600', fontSize: metrics.type.title, fontFamily: fontFamily(look.font) },
     pill: { borderRadius: metrics.radius.full, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: theme.tint },
     // Frosted glass by default; solid when the system asks for less transparency.
     card: reduceTransparency ? { borderRadius: metrics.radius.lg, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.line }
+      : look.style === 'pixel' ? { borderRadius: PIXEL.radius, backgroundColor: frost(theme, false, look).fill, borderWidth: PIXEL.border, borderColor: frost(theme, false, look).rim, boxShadow: frost(theme, false, look).shadow }
       : { borderRadius: metrics.radius.lg, backgroundColor: frost(theme, false, look).fill, borderWidth: 1, borderColor: frost(theme, false, look).rim, boxShadow: frost(theme, false, look).shadow },
     solidCard: { borderRadius: metrics.radius.lg, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.line },
   }), [theme, reduceTransparency, look]);
