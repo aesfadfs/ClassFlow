@@ -62,6 +62,23 @@ export function occursInWeek(entry: Entry, week: number): boolean {
   if (entry.weeks) return entry.weeks.includes(week);
   return week >= entry.startWeek && week <= entry.endWeek && (entry.parity === 'all' || (entry.parity === 'odd' ? week % 2 === 1 : week % 2 === 0));
 }
+/** Weeks (1…semesterWeeks) in which the entry takes place. */
+export const selectedWeeks = (entry: Entry, semesterWeeks: number) => Array.from({ length: semesterWeeks }, (_, index) => index + 1).filter(week => occursInWeek(entry, week));
+
+/**
+ * Store a set of picked weeks in the simplest equivalent form: a continuous
+ * range, an odd- or even-week range, or else the explicit list of weeks.
+ */
+export function weekRule(picked: number[]): Pick<Entry, 'startWeek' | 'endWeek' | 'parity' | 'weeks'> {
+  const weeks = [...new Set(picked)].filter(week => Number.isInteger(week) && week > 0).sort((a, b) => a - b);
+  if (!weeks.length) throw new Error('请至少选择一周');
+  const startWeek = weeks[0], endWeek = weeks[weeks.length - 1];
+  const steps = weeks.slice(1).map((week, index) => week - weeks[index]);
+  if (steps.every(step => step === 1)) return { startWeek, endWeek, parity: 'all', weeks: undefined };
+  if (steps.every(step => step === 2)) return { startWeek, endWeek, parity: startWeek % 2 ? 'odd' : 'even', weeks: undefined };
+  return { startWeek, endWeek, parity: 'all', weeks };
+}
+
 export const entriesForWeek = (entries: Entry[], week: number) => entries.filter(entry => occursInWeek(entry, week)).sort((a, b) => a.day - b.day || a.start - b.start);
 export const entriesForDay = (entries: Entry[], week: number, day: number) => entriesForWeek(entries, week).filter(entry => entry.day === day);
 
@@ -112,9 +129,11 @@ export type Occurrence = { entry: Entry; date: Date; week: number; offset: numbe
 
 // Concrete upcoming sessions from "now": unfinished items today first, then
 // later days in date/time order. Only weeks inside the semester are used, so
-// discrete weeks and odd/even rules keep their meaning.
-export function upcomingOccurrences(entries: Entry[], preferences: Preferences, now: Date, { days = 28, limit = 12 } = {}): Occurrence[] {
+// discrete weeks and odd/even rules keep their meaning. With `once`, each
+// entry appears only at its next session (the home cards), still in start order.
+export function upcomingOccurrences(entries: Entry[], preferences: Preferences, now: Date, { days = 28, limit = 12, once = false } = {}): Occurrence[] {
   const result: Occurrence[] = [];
+  const seen = new Set<string>();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
   const minute = now.getHours() * 60 + now.getMinutes();
   for (let offset = 0; offset < days && result.length < limit; offset++) {
@@ -123,6 +142,8 @@ export function upcomingOccurrences(entries: Entry[], preferences: Preferences, 
     if (week < 1 || week > preferences.semesterWeeks) continue;
     for (const entry of entriesForDay(entries, week, dayOfWeek(date))) {
       if (offset === 0 && entry.end <= minute) continue;
+      if (once && seen.has(entry.id)) continue;
+      seen.add(entry.id);
       result.push({ entry, date, week, offset });
       if (result.length >= limit) break;
     }

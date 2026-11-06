@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, DAYS, findConflicts, formatTime, parseDate, parseTime, validateEntry, dayOfWeek, type Entry, type Preferences } from '../domain/schedule';
+import { COLORS, DAYS, findConflicts, formatTime, parseDate, parseTime, selectedWeeks, validateEntry, weekRule, dayOfWeek, type Entry, type Preferences } from '../domain/schedule';
 import { CSV_TEMPLATE, analyzeImport, parseDemoImport, parseImport, type ImportResult } from '../domain/import';
 import { exportText, pickScheduleFile } from '../services/files';
 import { Button, Icon, PressSurface, Reveal, haptic, useAccessibility, useUI, type IconName } from '../ui/primitives';
@@ -11,7 +11,7 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import { scheduleOnRN } from 'react-native-worklets';
 import { hainnu } from '../features/schools';
 import { version as APP_VERSION } from '../../package.json';
-import { GAP_LEVELS, LEAD_LEVELS } from '../domain/reminders';
+import { GAP_LEVELS, LEAD_LEVELS, SOUNDS, VIBRATIONS } from '../domain/reminders';
 import { BLUR_LEVELS, CARD_LEVELS, DIM_LEVELS, PANEL_LEVELS, type Appearance, type CardImageScope } from '../domain/appearance';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SchoolBrowser } from './SchoolBrowser';
@@ -184,6 +184,47 @@ export function Toggle({ label, detail, value, onChange }: { label: string; deta
   </PressSurface>;
 }
 
+// One toggle per semester week, plus quick picks for every / odd / even week.
+function WeekPicker({ weeks, picked, onChange }: { weeks: number; picked: Set<number>; onChange: (picked: Set<number>) => void }) {
+  const theme = useTheme();
+  const styles = useSheetStyles();
+  const [width, setWidth] = useState(0);
+  const all = Array.from({ length: weeks }, (_, index) => index + 1);
+  const preset = (keep: (week: number) => boolean) => new Set(all.filter(keep));
+  const same = (other: Set<number>) => other.size === picked.size && [...other].every(week => picked.has(week));
+  const quick = [
+    { title: '全选', weeks: preset(() => true) },
+    { title: '单周', weeks: preset(week => week % 2 === 1) },
+    { title: '双周', weeks: preset(week => week % 2 === 0) },
+    { title: '清空', weeks: new Set<number>() },
+  ];
+  const columns = width >= 300 ? 10 : 5;
+  const gap = 6;
+  const cell = width ? Math.floor((width - gap * (columns - 1)) / columns) : 0;
+  return <View style={styles.field}>
+    <Text style={styles.fieldLabel}>上课周次 · 已选 {picked.size} 周</Text>
+    <View style={styles.weekQuick}>
+      {quick.map(item => {
+        const active = same(item.weeks);
+        return <PressSurface key={item.title} accessibilityRole="button" accessibilityLabel={`周次${item.title}`} accessibilityState={{ selected: active }}
+          onPress={() => { haptic(); onChange(new Set(item.weeks)); }} style={[styles.weekQuickButton, active && styles.weekdaySelected]}>
+          <Text style={[styles.weekQuickText, active && { color: theme.onAccent }]}>{item.title}</Text>
+        </PressSurface>;
+      })}
+    </View>
+    <View style={[styles.weekGrid, { gap }]} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+      {!!cell && all.map(week => {
+        const on = picked.has(week);
+        return <PressSurface key={week} accessibilityRole="checkbox" accessibilityLabel={`第 ${week} 周`} accessibilityState={{ checked: on }} aria-checked={on} scale={0.92}
+          onPress={() => { haptic('tick'); const next = new Set(picked); if (on) next.delete(week); else next.add(week); onChange(next); }}
+          style={[styles.weekCell, { width: cell }, on && styles.weekdaySelected]}>
+          <Text style={[styles.weekCellText, on && { color: theme.onAccent }]}>{week}</Text>
+        </PressSurface>;
+      })}
+    </View>
+  </View>;
+}
+
 function Choices<T extends string>({ label, items, value, onChange }: { label: string; items: { key: T; title: string; icon?: IconName }[]; value: T; onChange: (value: T) => void }) {
   const styles = useSheetStyles();
   const theme = useTheme();
@@ -224,9 +265,8 @@ export function EntrySheet({ closingRequested = false, entry, entries, semesterW
   const [draft, setDraft] = useState(entry);
   const [start, setStart] = useState(formatTime(entry.start));
   const [end, setEnd] = useState(formatTime(entry.end));
-  const [startWeek, setStartWeek] = useState(String(entry.startWeek));
-  const [endWeek, setEndWeek] = useState(String(entry.endWeek));
-  const [weekList, setWeekList] = useState(entry.weeks?.join('、') ?? '');
+  // Every week of the semester is one toggle; saved back as range / odd / even / explicit list.
+  const [picked, setPicked] = useState(() => new Set(selectedWeeks(entry, semesterWeeks)));
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -239,14 +279,8 @@ export function EntrySheet({ closingRequested = false, entry, entries, semesterW
   const update = (value: Partial<Entry>) => { setDraft(current => ({ ...current, ...value })); clearValidation(); };
   function save() {
     try {
-      const next = { ...draft, title: draft.title.trim(), start: parseTime(start), end: parseTime(end), startWeek: Number(startWeek), endWeek: Number(endWeek) };
-      if (entry.weeks) {
-        const values = weekList.trim().split(/[、，,\s]+/);
-        if (!values.every(value => /^\d+$/.test(value))) throw new Error('请填写整数周次，以逗号或顿号分隔');
-        next.weeks = [...new Set(values.map(Number))].sort((a, b) => a - b);
-        next.startWeek = next.weeks[0];
-        next.endWeek = next.weeks[next.weeks.length - 1];
-      }
+      const next: Entry = { ...draft, title: draft.title.trim(), start: parseTime(start), end: parseTime(end), ...weekRule([...picked]) };
+      if (!next.weeks) delete next.weeks;
       const invalid = validateEntry(next, semesterWeeks);
       if (invalid) return setError(invalid);
       const conflicts = findConflicts(next, entries);
@@ -291,14 +325,7 @@ export function EntrySheet({ closingRequested = false, entry, entries, semesterW
       <Field label="开始时间" value={start} placeholder="08:00" onChange={value => { setStart(value); clearValidation(); }} />
       <Field label="结束时间" value={end} placeholder="09:40" onChange={value => { setEnd(value); clearValidation(); }} />
     </View>
-    {entry.weeks ? <Field label="上课周次" value={weekList} onChange={value => { setWeekList(value); clearValidation(); }} placeholder="例如：1、3、6、8" /> : <>
-      <View style={styles.fieldPair}>
-        <Field label="开始周" value={startWeek} numeric onChange={value => { setStartWeek(value); clearValidation(); }} />
-        <Field label="结束周" value={endWeek} numeric onChange={value => { setEndWeek(value); clearValidation(); }} />
-      </View>
-      <Choices<Entry['parity']> label="重复频率" value={draft.parity} onChange={parity => update({ parity })}
-        items={[{ key: 'all', title: '每周' }, { key: 'odd', title: '单周' }, { key: 'even', title: '双周' }]} />
-    </>}
+    <WeekPicker weeks={semesterWeeks} picked={picked} onChange={next => { setPicked(next); clearValidation(); }} />
     <View style={styles.fieldPair}>
       <Field label="地点" value={draft.location} onChange={location => update({ location })} placeholder="选填" />
       {draft.kind === 'course' && <Field label="教师" value={draft.teacher} onChange={teacher => update({ teacher })} placeholder="选填" />}
@@ -571,11 +598,13 @@ function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (c
   </PressSurface>;
 }
 
-export function SettingsSheet({ closingRequested = false, preferences, onSave, onClose, onExport, onClearDemo, demo, appearance, onAppearance, onPickBackground, onEnableReminders }: {
+export function SettingsSheet({ closingRequested = false, preferences, onSave, onClose, onExport, onClearDemo, demo, appearance, onAppearance, onPickBackground, onEnableReminders, onTestReminder }: {
   closingRequested?: boolean; preferences: Preferences; onSave: (preferences: Preferences) => void; onClose: () => void; onExport: () => Promise<void>; onClearDemo: () => void; demo: boolean;
   appearance?: Appearance; onAppearance?: (patch: Partial<Appearance>) => void; onPickBackground?: () => Promise<string | null>;
   /** Asks for notification permission; resolves to whether reminders can be turned on. */
   onEnableReminders?: () => Promise<boolean>;
+  /** Sends a sample reminder in a few seconds with the current sound and vibration. */
+  onTestReminder?: () => void;
 }) {
   const theme = useTheme();
   const ui = useUI();
@@ -669,6 +698,14 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
           <Choices<string> label="连堂不提醒的间隔" value={String(appearance.reminders.gap)} onChange={value => onAppearance({ reminders: { ...appearance.reminders, gap: Number(value) } })}
             items={GAP_LEVELS.map(minutes => ({ key: String(minutes), title: minutes ? `${minutes} 分钟` : '都提醒' }))} />
           <Toggle label="个人安排也提醒" detail="默认只提醒课程" value={appearance.reminders.plans} onChange={plans => onAppearance({ reminders: { ...appearance.reminders, plans } })} />
+          <Text style={styles.hint}>提醒声音（内置铃声约 5–8 秒）</Text>
+          <Choices<string> label="提醒声音" value={appearance.reminders.sound} onChange={value => onAppearance({ reminders: { ...appearance.reminders, sound: SOUNDS.find(item => item.key === value)!.key } })}
+            items={SOUNDS.map(item => ({ key: item.key, title: item.title }))} />
+          <Text style={styles.hint}>振动方式（「持续」约振动 10 秒）</Text>
+          <Choices<string> label="振动方式" value={appearance.reminders.vibration} onChange={value => onAppearance({ reminders: { ...appearance.reminders, vibration: VIBRATIONS.find(item => item.key === value)!.key } })}
+            items={VIBRATIONS.map(item => ({ key: item.key, title: item.title }))} />
+          {onTestReminder && <Button small icon="vibrate" onPress={onTestReminder}>发送测试提醒</Button>}
+          <Text style={styles.hint}>手机处于静音或勿扰模式时，按系统设置只振动或不响。</Text>
           <Text style={styles.hint}>提醒会提前排好未来一周；之后打开一次课序即可继续排下去。</Text>
         </>}
       </View>
@@ -724,6 +761,12 @@ function useSheetStyles() {
     weekdayWrapped: { flexBasis: '20%' },
     weekdaySelected: { backgroundColor: theme.blue, borderColor: theme.blue },
     weekdayText: { color: theme.secondary, fontSize: metrics.type.label, fontWeight: '600', textAlign: 'center' },
+    weekQuick: { flexDirection: 'row', gap: metrics.space.xs },
+    weekQuickButton: { flex: 1, minHeight: 36, backgroundColor: theme.soft, borderRadius: metrics.radius.full, borderWidth: 1, borderColor: theme.line },
+    weekQuickText: { color: theme.secondary, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+    weekGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+    weekCell: { height: 36, backgroundColor: theme.soft, borderRadius: metrics.radius.sm, borderWidth: 1, borderColor: theme.line },
+    weekCellText: { color: theme.secondary, fontSize: 13, fontWeight: '600', textAlign: 'center', fontVariant: ['tabular-nums'] },
     swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: metrics.space.sm },
     swatch: { width: metrics.touch, height: metrics.touch, borderRadius: metrics.radius.full, borderWidth: 1.5, backgroundColor: theme.surface },
     swatchDot: { width: 31, height: 31, borderRadius: metrics.radius.full, alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },

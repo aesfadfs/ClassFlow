@@ -7,11 +7,30 @@ export type ReminderSettings = {
   lead: number;        // minutes before the start
   gap: number;         // skip when the previous session ended less than this many minutes earlier (0 = never skip)
   plans: boolean;      // also remind personal plans, not only courses
+  sound: ReminderSound;
+  vibration: ReminderVibration;
 };
+
+// Built-in tones are bundled files (scripts/make-reminder-sounds.mjs); 'default' is the system sound.
+export type ReminderSound = 'class_bell' | 'chime' | 'soft' | 'default' | 'none';
+export type ReminderVibration = 'long' | 'standard' | 'short' | 'none';
+export const SOUNDS: { key: ReminderSound; title: string }[] = [
+  { key: 'class_bell', title: '上课铃' }, { key: 'chime', title: '清脆' }, { key: 'soft', title: '柔和' }, { key: 'default', title: '系统' }, { key: 'none', title: '静音' },
+];
+export const VIBRATIONS: { key: ReminderVibration; title: string }[] = [
+  { key: 'long', title: '持续' }, { key: 'standard', title: '标准' }, { key: 'short', title: '短促' }, { key: 'none', title: '不振动' },
+];
+/** Android vibration patterns in ms (wait, buzz, wait, buzz…). 'long' keeps buzzing for about ten seconds. */
+export function vibrationPattern(kind: ReminderVibration): number[] | null {
+  if (kind === 'none') return null;
+  if (kind === 'short') return [0, 250];
+  if (kind === 'standard') return [0, 450, 250, 450];
+  return [0, ...Array.from({ length: 12 }, () => [600, 250]).flat()];
+}
 
 export const LEAD_LEVELS = [5, 10, 15, 20, 30];
 export const GAP_LEVELS = [0, 15, 30, 45, 60];
-export const defaultReminders = (): ReminderSettings => ({ enabled: false, lead: 10, gap: 30, plans: false });
+export const defaultReminders = (): ReminderSettings => ({ enabled: false, lead: 10, gap: 30, plans: false, sound: 'class_bell', vibration: 'long' });
 
 export type Reminder = { id: string; fireAt: Date; title: string; body: string };
 
@@ -62,5 +81,7 @@ export function restoreReminders(value: unknown): ReminderSettings {
     lead: LEAD_LEVELS.includes(raw.lead as number) ? raw.lead as number : base.lead,
     gap: GAP_LEVELS.includes(raw.gap as number) ? raw.gap as number : base.gap,
     plans: typeof raw.plans === 'boolean' ? raw.plans : base.plans,
+    sound: SOUNDS.some(item => item.key === raw.sound) ? raw.sound as ReminderSound : base.sound,
+    vibration: VIBRATIONS.some(item => item.key === raw.vibration) ? raw.vibration as ReminderVibration : base.vibration,
   };
 }

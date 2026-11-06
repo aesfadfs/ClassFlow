@@ -1,13 +1,14 @@
 import { Platform } from 'react-native';
-import type { Reminder } from '../domain/reminders';
+import { vibrationPattern, type Reminder, type ReminderSettings } from '../domain/reminders';
 
 // System notifications for class reminders (Android / iOS). The web build has
 // no background scheduling, so every call is a no-op there.
 
-const CHANNEL = 'class-reminders';
+const CHANNEL_PREFIX = 'class-reminders';
 const PREFIX = 'classflow-reminder:';
 
 type Notifications = typeof import('expo-notifications');
+type Look = Pick<ReminderSettings, 'sound' | 'vibration'>;
 let loaded: Promise<Notifications | null> | null = null;
 
 function notifications() {
@@ -22,18 +23,31 @@ function notifications() {
   return loaded;
 }
 
-async function prepareChannel(module: Notifications) {
-  if (Platform.OS !== 'android') return;
-  // High importance: Android shows it as a heads-up pop-up with sound and vibration.
-  await module.setNotificationChannelAsync(CHANNEL, {
+const soundFile = (look: Look) => look.sound === 'none' ? null : look.sound === 'default' ? 'default' : `${look.sound}.wav`;
+
+/**
+ * Android fixes a channel's sound and vibration once it is created, so each
+ * combination gets its own channel; channels for other combinations are removed.
+ */
+async function prepareChannel(module: Notifications, look: Look): Promise<string | undefined> {
+  if (Platform.OS !== 'android') return undefined;
+  const id = `${CHANNEL_PREFIX}-${look.sound}-${look.vibration}`;
+  const pattern = vibrationPattern(look.vibration);
+  await module.setNotificationChannelAsync(id, {
     name: '上课提醒',
     description: '每节课开始前的提醒',
+    // High importance: shown as a heads-up pop-up with sound and vibration.
     importance: module.AndroidImportance.HIGH,
-    vibrationPattern: [0, 250, 150, 250],
+    sound: soundFile(look),
+    enableVibrate: !!pattern,
+    vibrationPattern: pattern,
     lightColor: '#364BB6',
     lockscreenVisibility: module.AndroidNotificationVisibility.PUBLIC,
-    sound: 'default',
+    audioAttributes: { usage: module.AndroidAudioUsage.NOTIFICATION, contentType: module.AndroidAudioContentType.SONIFICATION },
   });
+  const channels = await module.getNotificationChannelsAsync();
+  await Promise.all(channels.filter(channel => channel.id.startsWith(CHANNEL_PREFIX) && channel.id !== id).map(channel => module.deleteNotificationChannelAsync(channel.id)));
+  return id;
 }
 
 export const remindersSupported = () => Platform.OS !== 'web';
@@ -42,26 +56,41 @@ export const remindersSupported = () => Platform.OS !== 'web';
 export async function requestReminderPermission(): Promise<boolean> {
   const module = await notifications();
   if (!module) return false;
-  await prepareChannel(module);
   const current = await module.getPermissionsAsync();
   if (current.granted) return true;
   if (!current.canAskAgain) return false;
   return (await module.requestPermissionsAsync()).granted;
 }
 
-/** Replace every pending class reminder with `reminders`. */
-export async function syncReminders(reminders: Reminder[]) {
+const content = (look: Look, title: string, body: string) => ({
+  title, body, sound: soundFile(look) ?? false, vibrate: vibrationPattern(look.vibration) ?? undefined, data: { kind: 'class-reminder' },
+});
+
+/** Replace every pending class reminder with `reminders`, using the chosen sound and vibration. */
+export async function syncReminders(reminders: Reminder[], look: Look) {
   const module = await notifications();
   if (!module) return;
   const pending = await module.getAllScheduledNotificationsAsync();
   await Promise.all(pending.filter(item => item.identifier.startsWith(PREFIX)).map(item => module.cancelScheduledNotificationAsync(item.identifier)));
   if (!reminders.length || !(await module.getPermissionsAsync()).granted) return;
-  await prepareChannel(module);
+  const channelId = await prepareChannel(module, look);
   for (const reminder of reminders) {
     await module.scheduleNotificationAsync({
       identifier: PREFIX + reminder.id,
-      content: { title: reminder.title, body: reminder.body, sound: 'default', data: { kind: 'class-reminder' } },
-      trigger: { type: module.SchedulableTriggerInputTypes.DATE, date: reminder.fireAt, channelId: CHANNEL },
+      content: content(look, reminder.title, reminder.body),
+      trigger: { type: module.SchedulableTriggerInputTypes.DATE, date: reminder.fireAt, channelId },
     });
   }
+}
+
+/** A sample reminder a few seconds from now, to hear and feel the chosen sound and vibration. */
+export async function sendTestReminder(look: Look): Promise<boolean> {
+  const module = await notifications();
+  if (!module || !(await requestReminderPermission())) return false;
+  const channelId = await prepareChannel(module, look);
+  await module.scheduleNotificationAsync({
+    content: content(look, '测试提醒 · 10 分钟后上课', '这是上课提醒的样子，可以锁屏等几秒试试'),
+    trigger: { type: module.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 3, channelId },
+  });
+  return true;
 }

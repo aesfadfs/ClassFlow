@@ -14,7 +14,7 @@ import { COLORS, DAYS, createEntry, dateKey, parseTime, dayOfWeek, emptyState, r
 import { analyzeImport } from './src/domain/import';
 import { exportText } from './src/services/files';
 import { cleanUpImages, pickImage } from './src/services/images';
-import { requestReminderPermission, syncReminders } from './src/services/notifications';
+import { requestReminderPermission, sendTestReminder, syncReminders } from './src/services/notifications';
 import { planReminders } from './src/domain/reminders';
 import { hainnu } from './src/features/schools';
 import { APPEARANCE_KEY, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
@@ -258,7 +258,7 @@ function ClassFlow() {
   const reminderSettings = appearance.reminders;
   useEffect(() => {
     if (loading || !appearanceLoaded || Platform.OS === 'web') return;
-    const sync = () => { void syncReminders(planReminders(state.entries, state.preferences, new Date(), reminderSettings)).catch(() => {}); };
+    const sync = () => { void syncReminders(planReminders(state.entries, state.preferences, new Date(), reminderSettings), reminderSettings).catch(() => {}); };
     const timer = setTimeout(sync, 800);
     const subscription = AppState.addEventListener('change', next => { if (next === 'active') sync(); });
     return () => { clearTimeout(timer); subscription.remove(); };
@@ -273,7 +273,7 @@ function ClassFlow() {
   const addLatest = useRef(add);
   addLatest.current = add;
   const addCourse = useCallback(() => addLatest.current('course'), []);
-  const upcoming = useMemo(() => upcomingOccurrences(state.entries, state.preferences, now), [state.entries, state.preferences, now]);
+  const upcoming = useMemo(() => upcomingOccurrences(state.entries, state.preferences, now, { once: true }), [state.entries, state.preferences, now]);
   const weekControl = <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
     <Button small icon="left" label="上一周" variant="ghost" disabled={week <= 1} onPress={() => { haptic(); setWeek(week - 1); }} />
     <Text accessibilityLiveRegion="polite" style={[styles.weekNumber, { color: theme.ink }]}>第 {week} 周</Text>
@@ -463,7 +463,8 @@ function ClassFlow() {
       cardImage={cardImageFor(appearance, editor.entry)} onPickImage={() => chooseImage('card')} />}
     {sheet === 'import' && <ImportSheet closingRequested={sheetClosing} semesterWeeks={state.preferences.semesterWeeks} existingEntries={state.entries} demo={state.demo} onClose={() => setSheet(null)} onImport={importEntries} />}
     {sheet === 'settings' && <SettingsSheet closingRequested={sheetClosing} preferences={state.preferences} onSave={savePreferences} onClose={() => setSheet(null)} onExport={writeBackup} demo={state.demo} onClearDemo={clearDemo}
-      appearance={appearance} onAppearance={updateAppearance} onPickBackground={() => chooseImage('background')} onEnableReminders={enableReminders} />}
+      appearance={appearance} onAppearance={updateAppearance} onPickBackground={() => chooseImage('background')} onEnableReminders={enableReminders}
+      onTestReminder={() => { void sendTestReminder(appearance.reminders).then(sent => notify(sent ? '3 秒后会收到一条测试提醒' : '没有通知权限，无法发送测试提醒')).catch(() => notify('测试提醒发送失败')); }} />}
   </View></BlurTargetContext.Provider></BackgroundContext.Provider></GlassContext.Provider>;
 }
 

@@ -125,6 +125,11 @@ test('up-next stack lists unfinished sessions from now in order and respects wee
   assert.equal(describeOccurrence(items[2], now).status, '明天 10:00');
   assert.equal(describeOccurrence(items[6], now).status, '11月13日 周五 08:00');
   assert.equal(upcomingOccurrences(entries, preferences, now, { limit: 2 }).length, 2);
+  // Home cards: every entry once, at its next session, in start order.
+  const once = upcomingOccurrences(entries, preferences, now, { days: 14, once: true });
+  assert.equal(new Set(once.map(item => item.entry.id)).size, once.length);
+  assert.deepEqual(once.map(item => item.entry.id), [...new Set(items.map(item => item.entry.id))]);
+  assert.ok(once.every((item, index) => !index || item.date.getTime() > once[index - 1].date.getTime() || (item.offset === once[index - 1].offset && item.entry.start >= once[index - 1].entry.start)));
   assert.deepEqual(upcomingOccurrences(entries, { ...preferences, semesterWeeks: 9 }, now), []);
 });
 
@@ -252,7 +257,11 @@ test('class reminders fire before each session and skip back-to-back ones', asyn
   // A week ahead at most, and the next Thursday repeats.
   assert.ok(plan.every(item => item.fireAt.getTime() - now.getTime() < 9 * 864e5));
   assert.ok(plan.some(item => item.id === 'a@2026-11-12'));
-  assert.deepEqual(restoreReminders({ enabled: true, lead: 7, gap: 45, plans: 'x' }), { enabled: true, lead: 10, gap: 45, plans: false });
+  assert.deepEqual(restoreReminders({ enabled: true, lead: 7, gap: 45, plans: 'x', sound: 'chime', vibration: 'loud' }), { enabled: true, lead: 10, gap: 45, plans: false, sound: 'chime', vibration: 'long' });
+  const { vibrationPattern } = await import('../src/domain/reminders.ts');
+  assert.equal(vibrationPattern('none'), null);
+  const long = vibrationPattern('long')!;
+  assert.ok(long.reduce((sum, ms) => sum + ms, 0) >= 10000, 'keeps buzzing about ten seconds');
 });
 
 test('period layout lines courses up in equal rows without guessing a bell schedule', async () => {
@@ -278,4 +287,21 @@ test('period layout lines courses up in equal rows without guessing a bell sched
   assert.equal(minuteToY(placed, t('08:50')), 63, 'middle of the break');
   assert.equal(minuteToY(placed, t('23:00')), placed.at(-1)!.top + 60);
   assert.deepEqual(periodRows([], null), []);
+});
+
+test('picked weeks are stored as a range, odd/even weeks or an explicit list', async () => {
+  const { weekRule, selectedWeeks } = await import('../src/domain/schedule.ts');
+  assert.deepEqual(weekRule([3, 1, 2, 2]), { startWeek: 1, endWeek: 3, parity: 'all', weeks: undefined });
+  assert.deepEqual(weekRule([1, 3, 5, 7]), { startWeek: 1, endWeek: 7, parity: 'odd', weeks: undefined });
+  assert.deepEqual(weekRule([2, 4, 6]), { startWeek: 2, endWeek: 6, parity: 'even', weeks: undefined });
+  assert.deepEqual(weekRule([4, 9, 13, 15, 17, 19]), { startWeek: 4, endWeek: 19, parity: 'all', weeks: [4, 9, 13, 15, 17, 19] });
+  assert.deepEqual(weekRule([6]), { startWeek: 6, endWeek: 6, parity: 'all', weeks: undefined });
+  assert.throws(() => weekRule([]), /至少选择一周/);
+  // Round trip keeps every rule's meaning.
+  for (const rule of [{ startWeek: 1, endWeek: 16, parity: 'odd' }, { startWeek: 3, endWeek: 20, parity: 'all' }, { startWeek: 1, endWeek: 19, parity: 'all', weeks: [1, 4, 9, 19] }]) {
+    const entry = createEntry({ ...rule, title: "测试课" } as never);
+    const picked = selectedWeeks(entry, 20);
+    assert.deepEqual(selectedWeeks({ ...entry, ...weekRule(picked) }, 20), picked);
+    assert.equal(validateEntry({ ...entry, ...weekRule(picked) }, 20), null);
+  }
 });
