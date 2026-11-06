@@ -37,6 +37,7 @@ export function GreetingCurtain() {
   const line = useSharedValue(0);
   const open = useSharedValue(0);
   const veil = useSharedValue(1);
+  const stamp = useSharedValue(0);   // date line, shown once the greeting is typed
   const left = useRef(false);
   const [typed, setTyped] = useState(0);
   const [cursor, setCursor] = useState(true);
@@ -49,6 +50,7 @@ export function GreetingCurtain() {
     left.current = true;
     timers.current.forEach(clearTimeout);
     setTyped(chars.length);
+    stamp.set(withTiming(1, { duration: 160 }));
     setLeaving(true);
     if (quick || reduceMotion) {
       veil.set(withTiming(0, { duration: quick ? 160 : 260 }, done => { if (done) scheduleOnRN(finish); }));
@@ -69,13 +71,14 @@ export function GreetingCurtain() {
     const start = (look: { greeting: boolean; haptics: boolean }) => {
       if (!alive || left.current) return;
       if (!look.greeting) { reveal(true); return; }
-      if (reduceMotion) { setTyped(chars.length); later(1200, () => reveal()); return; }
       // Typing rhythm: a little uneven like real keys, a beat longer after punctuation.
       let at = 380;
       chars.forEach((char, index) => {
         at += /[，。！？、,.!?]/.test(chars[index - 1] ?? '') ? 170 : 60 + Math.random() * 55;
         later(at, () => { setTyped(index + 1); if (look.haptics && char.trim()) haptic('tick'); });
       });
+      // Typing is not a moving animation, so it runs with reduced motion too; only the opening differs.
+      later(at + 40, () => stamp.set(withTiming(1, { duration: 260 })));
       later(at + PAUSE, () => reveal());
     };
     AsyncStorage.getItem(APPEARANCE_KEY).then(raw => start(restoreAppearance(raw))).catch(() => start({ greeting: true, haptics: true }));
@@ -89,6 +92,7 @@ export function GreetingCurtain() {
     opacity: words.get() * (1 - open.get() * 0.5),
     transform: [{ translateY: (1 - words.get()) * 12 }],
   }));
+  const date = useAnimatedStyle(() => ({ opacity: stamp.get() }));
   const light = useAnimatedStyle(() => ({ opacity: line.get() * (1 - open.get()), transform: [{ scaleX: line.get() }] }));
 
   if (!visible) return null;
@@ -102,14 +106,14 @@ export function GreetingCurtain() {
         <LinearGradient colors={greeting.colors} start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }} style={StyleSheet.absoluteFill} />
         <View style={[styles.center, { top: blockTop }]}>
           <Animated.View style={[styles.words, text]} onLayout={measure ? event => { const h = event.nativeEvent.layout.height; setLayout(current => ({ ...current, words: h })); } : undefined}>
-            <Text style={styles.kicker}>{greeting.title} · {now.getMonth() + 1}月{now.getDate()}日 {DAYS[dayOfWeek(now)]}</Text>
-            <Text maxFontSizeMultiplier={1.3} style={styles.greeting}
-              onLayout={measure ? event => { const { y, height: h } = event.nativeEvent.layout; setLayout(current => ({ ...current, y, h })); } : undefined}>
-              {/* Untyped characters stay laid out but invisible, so the line never shifts while typing. */}
-              <Text style={styles.typed}>{chars.slice(0, typed).join('')}</Text>
-              <Text style={{ opacity: cursor && !leaving ? 0.9 : 0, fontWeight: '300' }}>|</Text>
-              <Text style={styles.untyped}>{chars.slice(typed).join('')}</Text>
-            </Text>
+            <Animated.Text style={[styles.kicker, date]}>{greeting.title} · {now.getMonth() + 1}月{now.getDate()}日 {DAYS[dayOfWeek(now)]}</Animated.Text>
+            {/* An invisible copy of the whole line holds its size and place; only typed characters are drawn on top. */}
+            <View onLayout={measure ? event => { const { y, height: h } = event.nativeEvent.layout; setLayout(current => ({ ...current, y, h })); } : undefined}>
+              <Text maxFontSizeMultiplier={1.3} importantForAccessibility="no" style={[styles.greeting, styles.sizer]}>{greeting.text}|</Text>
+              <Text testID={measure ? 'greeting-typed' : undefined} maxFontSizeMultiplier={1.3} style={[styles.greeting, styles.typed]}>
+                {chars.slice(0, typed).join('')}<Text style={{ color: cursor && !leaving ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0)', fontWeight: '300' }}>|</Text>
+              </Text>
+            </View>
           </Animated.View>
         </View>
       </View>
@@ -131,8 +135,7 @@ const styles = StyleSheet.create({
   words: { alignItems: 'center', gap: GAP, maxWidth: 520 },
   kicker: { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '600', letterSpacing: 1 },
   greeting: { color: '#ffffff', fontSize: 23, lineHeight: 34, fontWeight: '700', textAlign: 'center', letterSpacing: 0.5 },
-  // The shadow sits on the typed part only, so untyped (transparent) characters leave no trace.
-  typed: { textShadowColor: 'rgba(0,0,0,0.25)', textShadowRadius: 8 },
-  untyped: { color: 'transparent' },
+  sizer: { opacity: 0 },
+  typed: { position: 'absolute', left: 0, top: 0, right: 0, textAlign: 'left', textShadowColor: 'rgba(0,0,0,0.25)', textShadowRadius: 8 },
   light: { position: 'absolute', left: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.92)', boxShadow: '0 0 14px rgba(255,255,255,0.9)' },
 });
