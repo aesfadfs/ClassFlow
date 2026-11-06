@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Image, Platform, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, AppState, BackHandler, Image, Platform, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { BlurTargetView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
@@ -14,6 +14,8 @@ import { COLORS, DAYS, createEntry, dateKey, dayOfWeek, emptyState, restoreSched
 import { analyzeImport } from './src/domain/import';
 import { exportText } from './src/services/files';
 import { cleanUpImages, pickImage } from './src/services/images';
+import { requestReminderPermission, syncReminders } from './src/services/notifications';
+import { planReminders } from './src/domain/reminders';
 import { APPEARANCE_KEY, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
 import { AccessibilityProvider, BlurTargetContext, Button, Icon, LiquidGlass, PressSurface, Reveal, haptic, setHapticsEnabled, useAccessibility, useUI, type IconName } from './src/ui/primitives';
 import { metrics, springs, useTheme } from './src/ui/theme';
@@ -197,6 +199,14 @@ function ClassFlow() {
     setToast({ message: result.entries.length ? `已导入 ${result.entries.length} 条${result.duplicateCount ? '，重复内容已跳过' : ''}` : '学期设置已恢复', undo: () => { setState(previous); setWeek(week); setToast(null); } });
   }
   function updateAppearance(patch: Partial<Appearance>) { setAppearance(current => ({ ...current, ...patch })); }
+  async function enableReminders() {
+    if (Platform.OS === 'web') { notify('网页版不支持系统通知，请在手机 App 中开启上课提醒'); return false; }
+    try {
+      if (await requestReminderPermission()) { haptic('toggleOn'); notify('已开启上课提醒'); return true; }
+      notify('没有通知权限：请在系统设置 → 应用 → 课序 → 通知中允许');
+    } catch { notify('无法开启通知，请稍后重试'); }
+    return false;
+  }
   async function chooseImage(purpose: 'background' | 'card') {
     try { return await pickImage(purpose); }
     catch (error) { notify(error instanceof Error ? error.message : '无法读取这张图片'); return null; }
@@ -238,6 +248,15 @@ function ClassFlow() {
   };
   const glassLook = useMemo(() => ({ panel: appearance.glassPanel, blur: appearance.glassBlur, card: appearance.glassCard, glow: appearance.glow }), [appearance.glassPanel, appearance.glassBlur, appearance.glassCard, appearance.glow]);
   const ui = useUI(glassLook);
+  // Keep a week of class reminders scheduled: after any timetable or setting change, and whenever the app comes back.
+  const reminderSettings = appearance.reminders;
+  useEffect(() => {
+    if (loading || !appearanceLoaded || Platform.OS === 'web') return;
+    const sync = () => { void syncReminders(planReminders(state.entries, state.preferences, new Date(), reminderSettings)).catch(() => {}); };
+    const timer = setTimeout(sync, 800);
+    const subscription = AppState.addEventListener('change', next => { if (next === 'active') sync(); });
+    return () => { clearTimeout(timer); subscription.remove(); };
+  }, [loading, appearanceLoaded, state.entries, state.preferences, reminderSettings]);
   const background = useMemo(() => ({ uri: appearance.background, dim: appearance.backgroundDim }), [appearance.background, appearance.backgroundDim]);
   const cardImageLookup = useCallback((entry: Entry) => cardImageFor(appearance, entry) ?? undefined, [appearance.cardImages, appearance.cardFrost]);
   const openEditor = useCallback((entry: Entry) => setEditor({ entry, isNew: false }), []);
@@ -430,7 +449,7 @@ function ClassFlow() {
       cardImage={cardImageFor(appearance, editor.entry)} onPickImage={() => chooseImage('card')} />}
     {sheet === 'import' && <ImportSheet closingRequested={sheetClosing} semesterWeeks={state.preferences.semesterWeeks} existingEntries={state.entries} demo={state.demo} onClose={() => setSheet(null)} onImport={importEntries} />}
     {sheet === 'settings' && <SettingsSheet closingRequested={sheetClosing} preferences={state.preferences} onSave={savePreferences} onClose={() => setSheet(null)} onExport={writeBackup} demo={state.demo} onClearDemo={clearDemo}
-      appearance={appearance} onAppearance={updateAppearance} onPickBackground={() => chooseImage('background')} />}
+      appearance={appearance} onAppearance={updateAppearance} onPickBackground={() => chooseImage('background')} onEnableReminders={enableReminders} />}
   </View></BlurTargetContext.Provider></BackgroundContext.Provider></GlassContext.Provider>;
 }
 

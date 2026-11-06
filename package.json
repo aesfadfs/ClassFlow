@@ -1,6 +1,6 @@
 {
   "name": "classflow",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "author": "Inno-Mon Studio",
   "type": "module",
@@ -33,6 +33,7 @@
     "expo-glass-effect": "~56.0.4",
     "expo-haptics": "~56.0.3",
     "expo-linear-gradient": "~56.0.4",
+    "expo-notifications": "~56.0.26",
     "expo-sharing": "~56.0.27",
     "expo-symbols": "~56.0.7",
     "expo-system-ui": "~56.0.5",

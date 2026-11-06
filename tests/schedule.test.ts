@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createEntry, demoState, emptyState, restoreScheduleState, findConflicts, freeWindows, isScheduleState, layoutDay, occursInWeek, parseDate, parseTime, weekDates, weekNumber, dateKey, validateEntry } from '../src/domain/schedule.ts';
+import { createEntry, demoState, emptyState, restoreScheduleState, findConflicts, freeWindows, isScheduleState, layoutDay, occursInWeek, parseDate, parseTime, weekDates, weekNumber, dateKey, validateEntry, dayOfWeek } from '../src/domain/schedule.ts';
 import { analyzeImport, CSV_TEMPLATE, parseCSV, parseImport } from '../src/domain/import.ts';
 
 test('fresh installs start empty and legacy examples do not return on upgrade', () => {
@@ -222,4 +222,35 @@ test('up-next stack pins cards at the top and compresses the ones behind', async
   assert.equal(anchoredIndex(['a', 'c'], 'b', 1), 1);
   assert.equal(anchoredIndex(['a'], 'z', 5), 0);
   assert.equal(anchoredIndex([], 'a', 3), 0);
+});
+
+test('class reminders fire before each session and skip back-to-back ones', async () => {
+  const { planReminders, defaultReminders, restoreReminders } = await import('../src/domain/reminders.ts');
+  const preferences = { ...emptyState().preferences, semesterStart: '2026-09-07', semesterWeeks: 20 };
+  // Thursday 2026-11-05 is in week 9; day index follows dayOfWeek (Monday = 0).
+  const thursday = dayOfWeek(new Date(2026, 10, 5, 12));
+  const entries = [
+    createEntry({ id: 'a', day: thursday, title: '高等数学', start: 480, end: 580, location: '二教 208' }),
+    createEntry({ id: 'b', day: thursday, title: '大学英语', start: 600, end: 700 }),      // 20 min after a
+    createEntry({ id: 'c', day: thursday, title: '数据结构', start: 760, end: 860 }),      // 60 min after b
+    createEntry({ id: 'p', day: thursday, kind: 'plan', title: '图书馆', start: 1200, end: 1260 }),
+  ];
+  const now = new Date(2026, 10, 5, 7, 0);
+  const on = { ...defaultReminders(), enabled: true };
+  const today = (list: { id: string }[]) => list.filter(item => item.id.endsWith('@2026-11-5')).map(item => item.id.split('@')[0]);
+  assert.deepEqual(planReminders(entries, preferences, now, defaultReminders()), [], 'off by default');
+  const plan = planReminders(entries, preferences, now, on);
+  assert.deepEqual(today(plan), ['a', 'c'], 'b follows a within 30 minutes; plans are off');
+  const first = plan[0];
+  assert.equal(first.fireAt.getTime(), new Date(2026, 10, 5, 7, 50).getTime());
+  assert.equal(first.title, '高等数学 · 10 分钟后上课');
+  assert.equal(first.body, '08:00–09:40 · 二教 208');
+  assert.deepEqual(today(planReminders(entries, preferences, now, { ...on, gap: 0, plans: true })), ['a', 'b', 'c', 'p']);
+  assert.deepEqual(today(planReminders(entries, preferences, now, { ...on, gap: 15 })), ['a', 'b', 'c'], '20-minute break is not under 15');
+  // Reminders already due are not scheduled again.
+  assert.deepEqual(today(planReminders(entries, preferences, new Date(2026, 10, 5, 7, 55), on)), ['c']);
+  // A week ahead at most, and the next Thursday repeats.
+  assert.ok(plan.every(item => item.fireAt.getTime() - now.getTime() < 9 * 864e5));
+  assert.ok(plan.some(item => item.id === 'a@2026-11-12'));
+  assert.deepEqual(restoreReminders({ enabled: true, lead: 7, gap: 45, plans: 'x' }), { enabled: true, lead: 10, gap: 45, plans: false });
 });

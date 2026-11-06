@@ -1,4 +1,5 @@
 import type { Entry } from './schedule';
+import { defaultReminders, restoreReminders, type ReminderSettings } from './reminders.ts';
 
 // Device-local look & feel. Stored apart from the schedule so JSON backups
 // stay portable (they never carry file paths that only exist on one phone).
@@ -13,6 +14,7 @@ export type Appearance = {
   glassBlur: number;                     // blur of the background behind glass, in px
   glassCard: number;                     // tint opacity of the home cards
   glow: boolean;                         // soft light along glass edges
+  reminders: ReminderSettings;           // class reminders (system notifications)
   dragEnabled: boolean;                  // drag / resize in the detailed timetable
   haptics: boolean;
 };
@@ -26,7 +28,7 @@ export const BLUR_LEVELS = [{ value: 0, title: '无' }, { value: 6, title: '轻'
 export const CARD_LEVELS = [{ value: 0.22, title: '通透' }, { value: 0.4, title: '适中' }, { value: 0.68, title: '浓郁' }];
 const allowed = (levels: { value: number }[], value: unknown, fallback: number) => levels.some(level => level.value === value) ? value as number : fallback;
 
-export const defaultAppearance = (): Appearance => ({ version: 1, background: null, backgroundDim: 0.25, cardImages: {}, cardFrost: {}, greeting: true, glassPanel: 0.3, glassBlur: 12, glassCard: 0.4, glow: true, dragEnabled: true, haptics: true });
+export const defaultAppearance = (): Appearance => ({ version: 1, background: null, backgroundDim: 0.25, cardImages: {}, cardFrost: {}, greeting: true, glassPanel: 0.3, glassBlur: 12, glassCard: 0.4, glow: true, reminders: defaultReminders(), dragEnabled: true, haptics: true });
 
 export const cardImageKey = (scope: CardImageScope, entry: Pick<Entry, 'id' | 'title'>) => scope === 'entry' ? `entry:${entry.id}` : `title:${entry.title.trim()}`;
 
@@ -89,6 +91,7 @@ export function restoreAppearance(raw: string | null): Appearance {
       glassBlur: allowed(BLUR_LEVELS, value.glassBlur, base.glassBlur),
       glassCard: allowed(CARD_LEVELS, value.glassCard, base.glassCard),
       glow: typeof value.glow === 'boolean' ? value.glow : true,
+      reminders: restoreReminders(value.reminders),
       dragEnabled: typeof value.dragEnabled === 'boolean' ? value.dragEnabled : true,
       haptics: typeof value.haptics === 'boolean' ? value.haptics : true,
     };

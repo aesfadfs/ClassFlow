@@ -11,6 +11,7 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import { scheduleOnRN } from 'react-native-worklets';
 import { hainnu } from '../features/schools';
 import { version as APP_VERSION } from '../../package.json';
+import { GAP_LEVELS, LEAD_LEVELS } from '../domain/reminders';
 import { BLUR_LEVELS, CARD_LEVELS, DIM_LEVELS, PANEL_LEVELS, type Appearance, type CardImageScope } from '../domain/appearance';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SchoolBrowser } from './SchoolBrowser';
@@ -570,9 +571,11 @@ function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (c
   </PressSurface>;
 }
 
-export function SettingsSheet({ closingRequested = false, preferences, onSave, onClose, onExport, onClearDemo, demo, appearance, onAppearance, onPickBackground }: {
+export function SettingsSheet({ closingRequested = false, preferences, onSave, onClose, onExport, onClearDemo, demo, appearance, onAppearance, onPickBackground, onEnableReminders }: {
   closingRequested?: boolean; preferences: Preferences; onSave: (preferences: Preferences) => void; onClose: () => void; onExport: () => Promise<void>; onClearDemo: () => void; demo: boolean;
   appearance?: Appearance; onAppearance?: (patch: Partial<Appearance>) => void; onPickBackground?: () => Promise<string | null>;
+  /** Asks for notification permission; resolves to whether reminders can be turned on. */
+  onEnableReminders?: () => Promise<boolean>;
 }) {
   const theme = useTheme();
   const ui = useUI();
@@ -645,6 +648,25 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
         <Toggle label="启动问候" detail="打开时先显示一句问候，再揭开课表；轻点可跳过" value={appearance.greeting} onChange={greeting => onAppearance({ greeting })} />
         <Toggle label="允许拖动调整课程" detail="关闭后，课表详情里的课程只能点开编辑，避免误触移动" value={appearance.dragEnabled} onChange={dragEnabled => onAppearance({ dragEnabled })} />
         <Toggle label="振动反馈" detail="切换页面、翻卡片、拖动吸附和保存时轻微振动" value={appearance.haptics} onChange={haptics => onAppearance({ haptics })} />
+      </View>
+      <View style={styles.divider} />
+      <View style={styles.group}>
+        <Text accessibilityRole="header" style={styles.itemTitle}>上课提醒</Text>
+        <Toggle label="课前通知" detail={Platform.OS === 'web' ? '网页版不支持系统通知，请在手机 App 中开启' : '每节课开始前，用系统通知弹窗提醒你'} value={appearance.reminders.enabled}
+          onChange={async enabled => {
+            if (enabled && !(await onEnableReminders?.())) return;
+            onAppearance({ reminders: { ...appearance.reminders, enabled } });
+          }} />
+        {appearance.reminders.enabled && <>
+          <Text style={styles.hint}>提前多久提醒</Text>
+          <Choices<string> label="提前多久提醒" value={String(appearance.reminders.lead)} onChange={value => onAppearance({ reminders: { ...appearance.reminders, lead: Number(value) } })}
+            items={LEAD_LEVELS.map(minutes => ({ key: String(minutes), title: `${minutes} 分钟` }))} />
+          <Text style={styles.hint}>上一节下课后不到这么久，就不再提醒下一节</Text>
+          <Choices<string> label="连堂不提醒的间隔" value={String(appearance.reminders.gap)} onChange={value => onAppearance({ reminders: { ...appearance.reminders, gap: Number(value) } })}
+            items={GAP_LEVELS.map(minutes => ({ key: String(minutes), title: minutes ? `${minutes} 分钟` : '都提醒' }))} />
+          <Toggle label="个人安排也提醒" detail="默认只提醒课程" value={appearance.reminders.plans} onChange={plans => onAppearance({ reminders: { ...appearance.reminders, plans } })} />
+          <Text style={styles.hint}>提醒会提前排好未来一周；之后打开一次课序即可继续排下去。</Text>
+        </>}
       </View>
     </>}
     <View style={styles.divider} />
