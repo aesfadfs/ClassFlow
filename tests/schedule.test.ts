@@ -254,3 +254,28 @@ test('class reminders fire before each session and skip back-to-back ones', asyn
   assert.ok(plan.some(item => item.id === 'a@2026-11-12'));
   assert.deepEqual(restoreReminders({ enabled: true, lead: 7, gap: 45, plans: 'x' }), { enabled: true, lead: 10, gap: 45, plans: false });
 });
+
+test('period layout lines courses up in equal rows without guessing a bell schedule', async () => {
+  const { periodRows, placeRows, minuteToY } = await import('../src/domain/periods.ts');
+  const t = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+  const course = (start: string, end: string) => ({ start: t(start), end: t(end) });
+  // No schedule chosen: one row per distinct course range, breaks dropped.
+  const week = [course('08:00', '09:40'), course('10:00', '11:40'), course('08:00', '09:40'), course('14:30', '16:10')];
+  assert.deepEqual(periodRows(week, null), [course('08:00', '09:40'), course('10:00', '11:40'), course('14:30', '16:10')]);
+  // A chosen schedule: numbered periods, a double period spans two rows, empty periods still shown.
+  const bell = [course('08:00', '08:45'), course('08:55', '09:40'), course('10:00', '10:45'), course('19:30', '20:15')];
+  const rows = periodRows([course('08:00', '09:40'), course('12:00', '12:30')], bell);
+  assert.deepEqual(rows.map(row => row.label ?? `${row.start}-${row.end}`), [1, 2, 3, '720-750', 4]);
+  // A double period just bridges the 08:45–08:55 break: no extra row, the card spans the gap.
+  assert.deepEqual(periodRows([course('08:00', '09:40')], bell.slice(0, 2)).map(row => row.label), [1, 2]);
+  // Time beyond the schedule still gets its own row.
+  assert.deepEqual(periodRows([course('20:00', '21:00')], bell).map(row => row.label ?? `${row.start}-${row.end}`), [1, 2, 3, 4, '1215-1260']);
+  // Pixels: equal period rows; times map linearly inside a row and into the gap between rows.
+  const placed = placeRows(rows, 60, 6);
+  assert.deepEqual(placed.slice(0, 3).map(row => [row.top, row.height]), [[0, 60], [66, 60], [132, 60]]);
+  assert.equal(minuteToY(placed, t('08:00')), 0);
+  assert.equal(minuteToY(placed, t('09:40')), 126);
+  assert.equal(minuteToY(placed, t('08:50')), 63, 'middle of the break');
+  assert.equal(minuteToY(placed, t('23:00')), placed.at(-1)!.top + 60);
+  assert.deepEqual(periodRows([], null), []);
+});

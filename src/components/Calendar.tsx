@@ -5,6 +5,7 @@ import { snapPlacement, type Placement } from '../domain/canvas';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { COLORS, DAYS, dateKey, entriesForWeek, formatTime, layoutDay, type Entry } from '../domain/schedule';
+import { minuteToY, periodRows, placeRows, type PeriodTime } from '../domain/periods';
 import { haptic, Icon, PRESS_DELAY, Reveal, useAccessibility } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
 
@@ -210,8 +211,10 @@ function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWi
   </Animated.View></GestureDetector>;
 }
 
-export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEnabled = true, now = new Date(), onDay, onEdit, onEmpty, onMove }: {
+export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEnabled = true, now = new Date(), layout = 'timeline', periods = null, onDay, onEdit, onEmpty, onMove }: {
   entries: Entry[]; week: number; dates: Date[]; day: number; mobile: boolean; singleDay: boolean; dragEnabled?: boolean; now?: Date;
+  /** 'timeline': proportional time axis. 'periods': equal rows per period / course time, aligned across the week. */
+  layout?: 'timeline' | 'periods'; periods?: PeriodTime[] | null;
   onDay: (day: number) => void; onEdit: (entry: Entry) => void; onEmpty: (day: number, start: number) => void;
   onMove: (entry: Entry) => void;
 }) {
@@ -224,11 +227,13 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
   const peers = useMemo(() => entriesForWeek(entries, week), [entries, week]);
   const onDrag = (placement: Placement | null) => setDrag(placement);
   const hourHeight = HOUR_HEIGHT * Math.min(1.4, Math.max(1, fontScale));
+  const rowsRef = useRef<ReturnType<typeof placeRows>>([]);
   useEffect(() => {
     const shown = peers.filter(entry => !singleDay || entry.day === day);
     const firstMinute = shown.length ? Math.min(...shown.map(entry => entry.start)) : 480;
-    canvasScroll.current?.scrollTo({ y: Math.max(0, firstMinute - 45) / 60 * hourHeight, animated: false });
-  }, [singleDay, day, week, hourHeight]);
+    const y = layout === 'periods' && rowsRef.current.length ? Math.max(0, minuteToY(rowsRef.current, firstMinute) - 12) : Math.max(0, firstMinute - 45) / 60 * hourHeight;
+    canvasScroll.current?.scrollTo({ y, animated: false });
+  }, [singleDay, day, week, hourHeight, layout]);
   const gutter = (mobile ? 48 : 54) * Math.min(1.45, Math.max(1, fontScale));
   const today = dateKey(now);
   const currentMinute = now.getHours() * 60 + now.getMinutes();
@@ -247,8 +252,13 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
     return { firstHour, lastHour, hours, days };
   }, [entries, week]);
   const { firstHour, lastHour, hours, days } = calendar;
-  const height = (lastHour - firstHour) * hourHeight;
-  const minuteOffset = (minute: number) => (minute / 60 - firstHour) * hourHeight;
+  // Period mode: rows from the chosen bell schedule and this week's times; falls back to the time axis when empty.
+  const rows = useMemo(() => layout === 'periods' ? placeRows(periodRows(entriesForWeek(entries, week), periods), hourHeight * 1.15, 6) : [], [layout, entries, week, periods, hourHeight]);
+  const byPeriod = rows.length > 0;
+  rowsRef.current = rows;
+  const height = byPeriod ? rows[rows.length - 1].top + rows[rows.length - 1].height : (lastHour - firstHour) * hourHeight;
+  const minuteOffset = (minute: number) => byPeriod ? minuteToY(rows, minute) : (minute / 60 - firstHour) * hourHeight;
+  const canDrag = dragEnabled && !byPeriod;
   const selectDay = (index: number) => { if (index !== day) { haptic(); onDay(index); } };
 
   return <View style={styles.shell}>
@@ -276,20 +286,30 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
     <ScrollView testID="calendar-scroll" ref={canvasScroll} nestedScrollEnabled scrollEnabled={!drag} style={{ flex: 1, minHeight: 0 }}>
     <View style={styles.grid}>
       <View style={{ width: gutter, height: height + 20 }} pointerEvents="none" importantForAccessibility="no-hide-descendants">
-        {hours.map(hour => <Text key={hour} style={[styles.hour, { top: (hour - firstHour) * hourHeight - 8, color: theme.secondary }]}>{formatTime(hour * 60)}</Text>)}
+        {byPeriod ? rows.map(row => <View key={row.start} style={[styles.periodLabel, { top: row.top, height: row.height }]}>
+          {row.label !== undefined && <Text style={[styles.periodNumber, { color: theme.ink }]}>{row.label}</Text>}
+          <Text style={[styles.periodTime, { color: theme.secondary }]}>{formatTime(row.start)}</Text>
+          <Text style={[styles.periodTime, { color: theme.secondary }]}>{formatTime(row.end)}</Text>
+        </View>) : hours.map(hour => <Text key={hour} style={[styles.hour, { top: (hour - firstHour) * hourHeight - 8, color: theme.secondary }]}>{formatTime(hour * 60)}</Text>)}
       </View>
       <View style={{ flex: 1, minWidth: 0 }} onLayout={event => setViewportWidth(event.nativeEvent.layout.width)}>
       <View onLayout={event => setCanvasWidth(event.nativeEvent.layout.width)} style={[styles.columns, { width: trackWidth, height, borderBottomColor: theme.line }]}>
         {visibleDays.map(index => {
           const currentDay = dateKey(dates[index]) === today;
-          const showCurrentTime = currentDay && currentMinute >= firstHour * 60 && currentMinute < lastHour * 60;
+          const showCurrentTime = currentDay && (byPeriod ? currentMinute >= rows[0].start && currentMinute <= rows[rows.length - 1].end : currentMinute >= firstHour * 60 && currentMinute < lastHour * 60);
           const Column = singleDay ? Reveal : View;
           return <Column
             key={index}
             {...(singleDay ? { distance: 0 } : {})}
             style={[styles.dayColumn, { borderColor: theme.line }, currentDay && !singleDay && { backgroundColor: theme.soft }]}
           >
-            {hours.slice(0, -1).map(hour => <Pressable
+            {byPeriod ? rows.map(row => <Pressable
+              key={row.start}
+              accessibilityRole="button"
+              accessibilityLabel={`添加安排，${DAYS[index]} ${row.label ? `第 ${row.label} 节 ` : ''}${formatTime(row.start)}`}
+              onPress={() => onEmpty(index, row.start)}
+              style={({ pressed }) => [styles.emptySlot, { height: row.height, top: row.top, borderColor: theme.line }, pressed && { backgroundColor: theme.tint }]}
+            />) : hours.slice(0, -1).map(hour => <Pressable
               key={hour}
               accessibilityRole="button"
               accessibilityLabel={`添加安排，${DAYS[index]} ${formatTime(hour * 60)}`}
@@ -306,10 +326,10 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
           </Column>;
         })}
         {visibleDays.flatMap((index, dayPosition) => days[index].map(({ entry, lane, lanes }) => {
-          const cardHeight = Math.max(12, (entry.end - entry.start) / 60 * hourHeight - 3);
+          const cardHeight = Math.max(12, byPeriod ? minuteOffset(entry.end) - minuteOffset(entry.start) - 3 : (entry.end - entry.start) / 60 * hourHeight - 3);
           const columnWidth = canvasWidth / visibleDays.length;
           return <CourseBlock key={entry.id} entry={entry} height={cardHeight} singleDay={singleDay} lanes={lanes}
-            columnWidth={columnWidth} hourHeight={hourHeight} peers={peers} onMove={onMove} onDrag={onDrag} dragEnabled={dragEnabled}
+            columnWidth={columnWidth} hourHeight={hourHeight} peers={peers} onMove={onMove} onDrag={onDrag} dragEnabled={canDrag}
             onPress={() => onEdit(entry)} style={{ position: 'absolute', top: minuteOffset(entry.start) + 1.5,
               left: columnWidth * (dayPosition + lane / lanes), width: columnWidth / lanes,
               height: cardHeight, paddingHorizontal: singleDay ? 5 : 2 }} />;
@@ -349,6 +369,9 @@ const styles = StyleSheet.create({
   weekSelection: { position: 'absolute', left: 4, right: 4, top: 0, bottom: 0, borderRadius: metrics.radius.md },
   grid: { flexDirection: 'row', marginTop: 9 },
   hour: { position: 'absolute', fontSize: 10, width: '100%', textAlign: 'center', fontVariant: ['tabular-nums'] },
+  periodLabel: { position: 'absolute', width: '100%', alignItems: 'center', justifyContent: 'center', gap: 1 },
+  periodNumber: { fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  periodTime: { fontSize: 10, lineHeight: 13, fontVariant: ['tabular-nums'] },
   columns: { flexShrink: 0, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
   dayColumn: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth },
   emptySlot: { position: 'absolute', left: 0, right: 0, borderTopWidth: StyleSheet.hairlineWidth },

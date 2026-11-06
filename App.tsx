@@ -10,12 +10,13 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Calendar, DayStrip } from './src/components/Calendar';
 import { EntrySheet, ImportSheet, SettingsSheet } from './src/components/Sheets';
-import { COLORS, DAYS, createEntry, dateKey, dayOfWeek, emptyState, restoreScheduleState, entriesForDay, upcomingOccurrences, entriesForWeek, formatTime, freeWindows, isScheduleState, weekDates, weekNumber, type Entry, type Preferences, type ScheduleState } from './src/domain/schedule';
+import { COLORS, DAYS, createEntry, dateKey, parseTime, dayOfWeek, emptyState, restoreScheduleState, entriesForDay, upcomingOccurrences, entriesForWeek, formatTime, freeWindows, isScheduleState, weekDates, weekNumber, type Entry, type Preferences, type ScheduleState } from './src/domain/schedule';
 import { analyzeImport } from './src/domain/import';
 import { exportText } from './src/services/files';
 import { cleanUpImages, pickImage } from './src/services/images';
 import { requestReminderPermission, syncReminders } from './src/services/notifications';
 import { planReminders } from './src/domain/reminders';
+import { hainnu } from './src/features/schools';
 import { APPEARANCE_KEY, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
 import { AccessibilityProvider, BlurTargetContext, Button, Icon, LiquidGlass, PressSurface, Reveal, haptic, setHapticsEnabled, useAccessibility, useUI, type IconName } from './src/ui/primitives';
 import { metrics, springs, useTheme } from './src/ui/theme';
@@ -199,6 +200,11 @@ function ClassFlow() {
     setToast({ message: result.entries.length ? `已导入 ${result.entries.length} 条${result.duplicateCount ? '，重复内容已跳过' : ''}` : '学期设置已恢复', undo: () => { setState(previous); setWeek(week); setToast(null); } });
   }
   function updateAppearance(patch: Partial<Appearance>) { setAppearance(current => ({ ...current, ...patch })); }
+  function setCalendarLayout(calendarLayout: Appearance['calendarLayout']) {
+    if (calendarLayout === appearance.calendarLayout) return;
+    haptic();
+    updateAppearance({ calendarLayout });
+  }
   async function enableReminders() {
     if (Platform.OS === 'web') { notify('网页版不支持系统通知，请在手机 App 中开启上课提醒'); return false; }
     try {
@@ -257,6 +263,10 @@ function ClassFlow() {
     const subscription = AppState.addEventListener('change', next => { if (next === 'active') sync(); });
     return () => { clearTimeout(timer); subscription.remove(); };
   }, [loading, appearanceLoaded, state.entries, state.preferences, reminderSettings]);
+  const narrowToolbar = contentWidth < 520;
+  // Numbered periods only when the user picked a bell schedule in settings; never inferred.
+  const periodTimes = useMemo(() => appearance.periodPreset === 'guilinyang' && hainnu.periodTimeProfile
+    ? hainnu.periodTimeProfile.times.map(time => ({ start: parseTime(time.start), end: parseTime(time.end) })) : null, [appearance.periodPreset]);
   const background = useMemo(() => ({ uri: appearance.background, dim: appearance.backgroundDim }), [appearance.background, appearance.backgroundDim]);
   const cardImageLookup = useCallback((entry: Entry) => cardImageFor(appearance, entry) ?? undefined, [appearance.cardImages, appearance.cardFrost]);
   const openEditor = useCallback((entry: Entry) => setEditor({ entry, isNew: false }), []);
@@ -369,20 +379,24 @@ function ClassFlow() {
             <GlassFill radius={metrics.radius.lg} strong />
             <View style={styles.detailToolbar}>
               <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
-                <Button small variant="ghost" label="按周查看" selected={view === 'week'} onPress={() => setView('week')}>周视图</Button>
-                <Button small variant="ghost" label="按日查看" selected={view === 'day'} onPress={() => setView('day')}>日视图</Button>
+                <Button small variant="ghost" label="按周查看" selected={view === 'week'} onPress={() => setView('week')}>{narrowToolbar ? '周' : '周视图'}</Button>
+                <Button small variant="ghost" label="按日查看" selected={view === 'day'} onPress={() => setView('day')}>{narrowToolbar ? '日' : '日视图'}</Button>
               </View>
-              <PressSurface testID="drag-toggle" accessibilityRole="switch" accessibilityLabel="允许拖动调整课程" accessibilityState={{ checked: appearance.dragEnabled }} aria-checked={appearance.dragEnabled}
+              <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
+                <Button small variant="ghost" label="按时间轴排列" selected={appearance.calendarLayout === 'timeline'} onPress={() => setCalendarLayout('timeline')}>时间轴</Button>
+                <Button small variant="ghost" label="按节次对齐" selected={appearance.calendarLayout === 'periods'} onPress={() => setCalendarLayout('periods')}>节次</Button>
+              </View>
+              {appearance.calendarLayout === 'timeline' && <PressSurface testID="drag-toggle" accessibilityRole="switch" accessibilityLabel="允许拖动调整课程" accessibilityState={{ checked: appearance.dragEnabled }} aria-checked={appearance.dragEnabled}
                 onPress={toggleDrag} style={[styles.dragToggle, { backgroundColor: appearance.dragEnabled ? theme.tint : theme.soft, borderColor: appearance.dragEnabled ? theme.accentLine : theme.line }]}>
                 <View style={[ui.row, { gap: 6, paddingHorizontal: 10 }]}>
                   <Icon name={appearance.dragEnabled ? 'unlock' : 'lock'} size={15} color={appearance.dragEnabled ? theme.blue : theme.muted} />
                   <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={[ui.label, { fontSize: 12, fontWeight: '600', color: appearance.dragEnabled ? theme.blue : theme.muted }]}>
-                    {appearance.dragEnabled ? (landscape ? '拖动开' : Platform.OS === 'web' ? '拖动调整：开' : '长按拖动：开') : (landscape ? '拖动关' : '拖动调整：关')}
+                    {appearance.dragEnabled ? (landscape || narrowToolbar ? '拖动开' : Platform.OS === 'web' ? '拖动调整：开' : '长按拖动：开') : (landscape || narrowToolbar ? '拖动关' : '拖动调整：关')}
                   </Text>
                 </View>
-              </PressSurface>
+              </PressSurface>}
             </View>
-            <Calendar entries={state.entries} week={week} dates={dates} day={day} now={now} mobile={mobile} singleDay={view === 'day'} dragEnabled={appearance.dragEnabled} onDay={setDay} onMove={moveEntry}
+            <Calendar entries={state.entries} week={week} dates={dates} day={day} now={now} mobile={mobile} singleDay={view === 'day'} dragEnabled={appearance.dragEnabled} layout={appearance.calendarLayout} periods={periodTimes} onDay={setDay} onMove={moveEntry}
               onEdit={entry => setEditor({ entry, isNew: false })} onEmpty={(selectedDay, start) => add('plan', selectedDay, start)} />
           </View>
         </>}

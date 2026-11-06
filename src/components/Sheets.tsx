@@ -646,6 +646,10 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
           items={CARD_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
         <Toggle label="边缘光晕" detail="玻璃边缘带一圈柔和的光" value={appearance.glow} onChange={glow => onAppearance({ glow })} />
         <Toggle label="启动问候" detail="打开时先显示一句问候，再揭开课表；轻点可跳过" value={appearance.greeting} onChange={greeting => onAppearance({ greeting })} />
+        <Text style={styles.hint}>完整课表「节次」排列的作息</Text>
+        <Choices<string> label="节次作息" value={appearance.periodPreset} onChange={value => onAppearance({ periodPreset: value === 'guilinyang' ? 'guilinyang' : 'auto' })}
+          items={[{ key: 'auto', title: '按课程时间' }, { key: 'guilinyang', title: '桂林洋校区' }]} />
+        <Text style={styles.hint}>{appearance.periodPreset === 'guilinyang' ? '按海南师大桂林洋校区作息显示第 1–10 节，第 10 节为 20:20–21:05。其他校区请选「按课程时间」。' : '每一排对应一段上课时间，不编号，也不猜测学校作息。'}</Text>
         <Toggle label="允许拖动调整课程" detail="关闭后，课表详情里的课程只能点开编辑，避免误触移动" value={appearance.dragEnabled} onChange={dragEnabled => onAppearance({ dragEnabled })} />
         <Toggle label="振动反馈" detail="切换页面、翻卡片、拖动吸附和保存时轻微振动" value={appearance.haptics} onChange={haptics => onAppearance({ haptics })} />
       </View>
