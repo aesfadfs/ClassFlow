@@ -98,7 +98,7 @@ export type LookPreset = {
 /** Wallpaper fields a custom preset carries along with `background`. */
 const WALLPAPER_KEYS = ['backgroundKind', 'backgroundFrame', 'backdrop', 'wallpaperTone'] as const;
 export const BUILTIN_PRESETS: LookPreset[] = [
-  { id: 'builtin:glass', name: '液态玻璃', uiStyle: 'glass', font: 'system', glassPanel: 0.3, glassBlur: 12, glassCard: 0.4, glow: true, backgroundDim: 0.25 },
+  { id: 'builtin:glass', name: '液态玻璃', uiStyle: 'glass', font: 'system', glassPanel: 0.16, glassBlur: 0, glassCard: 0.22, glow: true, backgroundDim: 0.25 },
   { id: 'builtin:pixel', name: '像素方块', uiStyle: 'pixel', font: 'mono', glassPanel: 0.55, glassBlur: 0, glassCard: 0.68, glow: false, backgroundDim: 0.5 },
 ];
 const MAX_PRESETS = 12;
@@ -160,11 +160,11 @@ function restorePreset(value: unknown, base: Appearance): LookPreset | null {
     id: raw.id, name: raw.name,
     uiStyle: raw.uiStyle === 'pixel' ? 'pixel' : 'glass',
     font: FONTS.some(font => font.key === raw.font) ? raw.font as FontChoice : 'system',
-    glassPanel: allowed(PANEL_LEVELS, raw.glassPanel, base.glassPanel),
-    glassBlur: allowed(BLUR_LEVELS, raw.glassBlur, base.glassBlur),
-    glassCard: allowed(CARD_LEVELS, raw.glassCard, base.glassCard),
+    glassPanel: inRange(PANEL_RANGE, raw.glassPanel, base.glassPanel),
+    glassBlur: inRange(BLUR_RANGE, raw.glassBlur, base.glassBlur),
+    glassCard: inRange(CARD_RANGE, raw.glassCard, base.glassCard),
     glow: typeof raw.glow === 'boolean' ? raw.glow : true,
-    backgroundDim: DIM_LEVELS.some(level => level.value === raw.backgroundDim) ? raw.backgroundDim as number : base.backgroundDim,
+    backgroundDim: inRange(DIM_RANGE, raw.backgroundDim, base.backgroundDim),
     background: isUri(raw.background) ? raw.background : null,
     backgroundKind: backgroundKind(raw.backgroundKind),
     backgroundFrame: clampFrame(raw.backgroundFrame),
@@ -183,9 +183,20 @@ export const DIM_LEVELS = [{ value: 0, title: '无' }, { value: 0.25, title: '�
 export const PANEL_LEVELS = [{ value: 0.16, title: '通透' }, { value: 0.3, title: '适中' }, { value: 0.55, title: '朦胧' }];
 export const BLUR_LEVELS = [{ value: 0, title: '无' }, { value: 6, title: '轻' }, { value: 12, title: '中' }, { value: 24, title: '重' }];
 export const CARD_LEVELS = [{ value: 0.22, title: '通透' }, { value: 0.4, title: '适中' }, { value: 0.68, title: '浓郁' }];
-const allowed = (levels: { value: number }[], value: unknown, fallback: number) => levels.some(level => level.value === value) ? value as number : fallback;
+// Each setting is a slider; the levels above are marks on it. Any value inside the range is kept.
+export const DIM_RANGE = { min: 0, max: 0.85, step: 0.01 };
+export const PANEL_RANGE = { min: 0.05, max: 0.85, step: 0.01 };
+export const BLUR_RANGE = { min: 0, max: 30, step: 1 };
+export const CARD_RANGE = { min: 0.08, max: 0.9, step: 0.01 };
+export type SliderRange = { min: number; max: number; step: number };
+export const snapToRange = (range: SliderRange, value: number) => {
+  const clamped = Math.min(range.max, Math.max(range.min, value));
+  return Math.round(Math.round((clamped - range.min) / range.step) * range.step * 1000 + range.min * 1000) / 1000;
+};
+const inRange = (range: SliderRange, value: unknown, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= range.min && value <= range.max ? value : fallback;
 
-export const defaultAppearance = (): Appearance => ({ version: 1, background: null, backgroundKind: 'image', backgroundFrame: null, backdrop: null, wallpaperTone: 'system', backgroundDim: 0.25, cardImages: {}, cardFrost: {}, greeting: true, glassPanel: 0.3, glassBlur: 12, glassCard: 0.4, glow: true, uiStyle: 'glass', font: 'system', presets: [], reminders: defaultReminders(), calendarLayout: 'timeline', periodPreset: 'auto', dragEnabled: true, haptics: true });
+export const defaultAppearance = (): Appearance => ({ version: 1, background: null, backgroundKind: 'image', backgroundFrame: null, backdrop: null, wallpaperTone: 'system', backgroundDim: 0.25, cardImages: {}, cardFrost: {}, greeting: true, glassPanel: 0.16, glassBlur: 0, glassCard: 0.22, glow: true, uiStyle: 'glass', font: 'system', presets: [], reminders: defaultReminders(), calendarLayout: 'timeline', periodPreset: 'auto', dragEnabled: true, haptics: true });
 
 export const cardImageKey = (scope: CardImageScope, entry: Pick<Entry, 'id' | 'title'>) => scope === 'entry' ? `entry:${entry.id}` : `title:${entry.title.trim()}`;
 
@@ -242,9 +253,9 @@ export function restoreAppearance(raw: string | null): Appearance {
       cardImages,
       cardFrost,
       greeting: typeof value.greeting === 'boolean' ? value.greeting : true,
-      glassPanel: allowed(PANEL_LEVELS, value.glassPanel, base.glassPanel),
-      glassBlur: allowed(BLUR_LEVELS, value.glassBlur, base.glassBlur),
-      glassCard: allowed(CARD_LEVELS, value.glassCard, base.glassCard),
+      glassPanel: inRange(PANEL_RANGE, value.glassPanel, base.glassPanel),
+      glassBlur: inRange(BLUR_RANGE, value.glassBlur, base.glassBlur),
+      glassCard: inRange(CARD_RANGE, value.glassCard, base.glassCard),
       glow: typeof value.glow === 'boolean' ? value.glow : true,
       uiStyle: value.uiStyle === 'pixel' ? 'pixel' : 'glass',
       font: FONTS.some(font => font.key === value.font) ? value.font as FontChoice : 'system',

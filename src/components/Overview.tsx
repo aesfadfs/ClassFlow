@@ -256,8 +256,10 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
               <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.35)', 'rgba(0,0,0,0.08)', 'rgba(0,0,0,0.6)']} locations={[0, 0.45, 1]} style={StyleSheet.absoluteFill} />
             </> : px
               // Pixel block: two flat bands of the course colour instead of a gradient.
-              ? <LinearGradient pointerEvents="none" colors={[GRADIENTS[entry.color][0], GRADIENTS[entry.color][0], GRADIENTS[entry.color][1], GRADIENTS[entry.color][1]]} locations={[0, 0.64, 0.64, 1]} style={StyleSheet.absoluteFill} />
-              : <LinearGradient pointerEvents="none" colors={glass ? glassTint(entry.color, look.card) : GRADIENTS[entry.color]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
+              // Separate keys and explicit locations: on Android a dropped 'locations' prop is ignored, so the
+              // pixel bands' four stops stayed on the glass tint's two colours and the card kept its opaque pixel colours.
+              ? <LinearGradient key="pixel-tint" pointerEvents="none" colors={[GRADIENTS[entry.color][0], GRADIENTS[entry.color][0], GRADIENTS[entry.color][1], GRADIENTS[entry.color][1]]} locations={[0, 0.64, 0.64, 1]} style={StyleSheet.absoluteFill} />
+              : <LinearGradient key="glass-tint" pointerEvents="none" colors={glass ? glassTint(entry.color, look.card) : GRADIENTS[entry.color]} locations={[0, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
             {px && !image && <View pointerEvents="none" style={styles.pixelSparkle}>
               {[[0, 0], [12, 0], [0, 12], [24, 12], [12, 24]].map(([x, y]) => <View key={`${x}-${y}`} style={[styles.pixelDot, { left: x, top: y }]} />)}
             </View>}

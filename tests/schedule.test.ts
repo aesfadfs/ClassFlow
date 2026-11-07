@@ -154,7 +154,7 @@ test('appearance keeps per-item and per-course card pictures apart and restores 
   assert.equal(restored.dragEnabled, false);
   assert.equal(restored.backgroundDim, 0.25);
   const odd = restoreAppearance(JSON.stringify({ glassPanel: 0.99, glassBlur: 6, glassCard: 'x', glow: false }));
-  assert.deepEqual([odd.glassPanel, odd.glassBlur, odd.glassCard, odd.glow], [0.3, 6, 0.4, false]);
+  assert.deepEqual([odd.glassPanel, odd.glassBlur, odd.glassCard, odd.glow], [0.16, 6, 0.22, false]);
   assert.deepEqual(Object.keys(restored.cardImages).sort(), ['entry:m2', 'title:高等数学 A']);
   assert.deepEqual(restored.cardFrost, { 'entry:m2': true });
   assert.equal(restored.greeting, true);

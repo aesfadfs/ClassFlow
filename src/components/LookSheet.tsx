@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BLUR_LEVELS, BUILTIN_PRESETS, CARD_LEVELS, DIM_LEVELS, FONTS, PANEL_LEVELS, WALLPAPERS, matchesPreset, type Appearance, type LookPreset, type WallpaperTone } from '../domain/appearance';
+import { BLUR_LEVELS, BLUR_RANGE, BUILTIN_PRESETS, CARD_LEVELS, CARD_RANGE, DIM_LEVELS, DIM_RANGE, FONTS, PANEL_LEVELS, PANEL_RANGE, WALLPAPERS, matchesPreset, type Appearance, type LookPreset, type WallpaperTone } from '../domain/appearance';
 import { pickWallpaper, videoWallpaperSupported } from '../services/images';
 import { Button, Icon, PressSurface, haptic, useUI } from '../ui/primitives';
 import { AppBackground, fontFamily, usePixelStyles } from '../ui/glass';
 import { metrics, useTheme } from '../ui/theme';
 import { Choices, Field, Sheet, Toggle } from './Sheets';
 import { WallpaperFramer } from './WallpaperFramer';
+import { SpringSlider } from '../ui/SpringSlider';
+
+const percent = (value: number) => `${Math.round(value * 100)}%`;
 
 const wallpaperOf = (appearance: Appearance): Partial<Appearance> => ({
   background: appearance.background, backgroundKind: appearance.backgroundKind, backgroundFrame: appearance.backgroundFrame,
@@ -109,8 +112,8 @@ export function LookSheet({ closingRequested = false, appearance, onApply, onApp
         })}
       </View>
       {hasFile && <>
-        <Choices<string> label="背景遮罩" value={String(appearance.backgroundDim)} onChange={value => onAppearance({ backgroundDim: Number(value) })}
-          items={DIM_LEVELS.map(level => ({ key: String(level.value), title: `遮罩${level.title}` }))} />
+        <SpringSlider label="壁纸遮罩" detail="在壁纸上盖一层页面底色；越高壁纸越淡、文字越清楚" value={appearance.backgroundDim} range={DIM_RANGE}
+          marks={DIM_LEVELS} format={percent} onChange={backgroundDim => onAppearance({ backgroundDim })} />
         <Text style={ui.label}>壁纸上的文字配色</Text>
         <Choices<WallpaperTone> label="壁纸上的文字配色" value={appearance.wallpaperTone} onChange={wallpaperTone => onAppearance({ wallpaperTone })}
           items={[{ key: 'system', title: '跟随系统' }, { key: 'light', title: '浅色' }, { key: 'dark', title: '深色' }]} />
@@ -120,12 +123,12 @@ export function LookSheet({ closingRequested = false, appearance, onApply, onApp
     </View>
     <View style={{ gap: 10 }}>
       <Text accessibilityRole="header" style={[ui.title, { fontSize: 17 }]}>玻璃质感</Text>
-      <Choices<string> label="界面透明度" value={String(appearance.glassPanel)} onChange={value => onAppearance({ glassPanel: Number(value) })}
-        items={PANEL_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
-      <Choices<string> label="雾化强度" value={String(appearance.glassBlur)} onChange={value => onAppearance({ glassBlur: Number(value) })}
-        items={BLUR_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
-      <Choices<string> label="课程卡片" value={String(appearance.glassCard)} onChange={value => onAppearance({ glassCard: Number(value) })}
-        items={CARD_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
+      <SpringSlider label="面板底色浓度" detail="设置页、课表框、日期条和底部栏的底色；越低越能透出壁纸" value={appearance.glassPanel} range={PANEL_RANGE}
+        marks={PANEL_LEVELS} format={percent} onChange={glassPanel => onAppearance({ glassPanel })} />
+      <SpringSlider label="背景模糊" detail="玻璃后面的壁纸模糊多少，0 为不模糊" value={appearance.glassBlur} range={BLUR_RANGE}
+        marks={BLUR_LEVELS} format={value => `${Math.round(value)} px`} onChange={glassBlur => onAppearance({ glassBlur })} />
+      <SpringSlider label="首页卡片底色浓度" detail="首页课程卡片上那层颜色；越低越能透出壁纸或卡片图片" value={appearance.glassCard} range={CARD_RANGE}
+        marks={CARD_LEVELS} format={percent} onChange={glassCard => onAppearance({ glassCard })} />
       <Toggle label="边缘光晕" detail="玻璃边缘带一圈柔和的光" value={appearance.glow} onChange={glow => onAppearance({ glow })} />
     </View>
     <View style={{ gap: 10 }}>
