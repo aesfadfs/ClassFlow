@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, cancelAnimation, useAnimatedReaction, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { describeOccurrence, formatTime, type Entry, type Occurrence } from '../domain/schedule';
-import { haptic, Icon, PRESS_DELAY, useAccessibility, useTapGuard, useUI } from '../ui/primitives';
+import { Button, haptic, Icon, PRESS_DELAY, useAccessibility, useTapGuard, useUI } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
 import { Backdrop, fontFamily, useGlass, useScreenOffset } from '../ui/glass';
 import { STACK, anchoredIndex, settleIndex, stackPose } from '../ui/stackMath';
@@ -39,8 +39,8 @@ const keyOf = (item: Occurrence) => `${item.entry.id}-${item.offset}`;
  * inertia), mouse wheel or keyboard; tap a card to bring it to the top, tap the
  * top card for a soft bounce, long-press to edit.
  */
-export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen, onAdd, imageFor }: {
-  items: Occurrence[]; now: Date; onOpen: (entry: Entry) => void; onAdd: () => void; imageFor?: (entry: Entry) => { uri: string; frost: boolean } | undefined;
+export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen, onAdd, onImport, imageFor }: {
+  items: Occurrence[]; now: Date; onOpen: (entry: Entry) => void; onAdd: () => void; onImport?: () => void; imageFor?: (entry: Entry) => { uri: string; frost: boolean } | undefined;
 }) {
   const stage = useScreenOffset();
   const { reduceTransparency } = useAccessibility();
@@ -144,12 +144,15 @@ export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen,
   }, [count > 0, position, step]);
 
   if (!count) {
-    return <Pressable accessibilityRole="button" accessibilityLabel="近期没有安排，添加一项" onPress={onAdd}
-      style={({ pressed }) => [styles.empty, { borderColor: theme.line, backgroundColor: theme.soft }, pressed && { opacity: 0.7 }]}>
+    return <View style={[styles.empty, { borderColor: theme.line, backgroundColor: theme.soft }]}>
       <Icon name="coffee" size={30} color={theme.muted} />
       <Text style={[ui.title, { fontSize: 17 }]}>接下来没有课程或待办</Text>
-      <Text style={[ui.label, { textAlign: 'center' }]}>导入课表，或点这里添加一项安排</Text>
-    </Pressable>;
+      <Text style={[ui.label, { textAlign: 'center' }]}>导入课表，或先手动添加一项安排</Text>
+      <View style={styles.emptyActions}>
+        {onImport && <Button small icon="import" variant="primary" onPress={() => { haptic(); onImport(); }}>导入课表</Button>}
+        <Button small icon="plus" onPress={() => { haptic(); onAdd(); }}>添加安排</Button>
+      </View>
+    </View>;
   }
 
   const current = items[Math.min(active, count - 1)];
@@ -168,7 +171,7 @@ export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen,
         }}>
         {cardWidth > 0 && items.map((item, index) => index >= active - STACK.MAX_DEPTH - 2 && index <= active + below + 1 && <StackCard key={keyOf(item)}
           item={item} now={now} image={imageFor?.(item.entry)} index={index} position={position} step={stepPx} width={cardWidth} height={cardHeight} left={left}
-          front={index === active} interactive={index >= active - STACK.MAX_DEPTH} glass={!reduceTransparency} frame={{ x: stage.offset.x + left, y: stage.offset.y }}
+          front={index === active} interactive={index >= active - STACK.MAX_DEPTH} glass={!reduceTransparency} frosted={Math.abs(index - active) <= 1} frame={{ x: stage.offset.x + left, y: stage.offset.y }}
           onPress={() => {
             if (Date.now() < suppressPress.current) return;
             if (index !== active) goTo(index); else haptic('light');
@@ -188,9 +191,10 @@ export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen,
   </View>;
 });
 
-function StackCard({ item, now, image, index, position, step, width, height, left, front, interactive, glass, frame, onPress, onLongPress }: {
+function StackCard({ item, now, image, index, position, step, width, height, left, front, interactive, glass, frosted, frame, onPress, onLongPress }: {
   item: Occurrence; now: Date; image?: { uri: string; frost: boolean }; index: number; position: SharedValue<number>; step: number; width: number; height: number; left: number;
-  front: boolean; interactive: boolean; glass: boolean; frame: { x: number; y: number }; onPress: () => void; onLongPress: () => void;
+  /** Only the front card and its neighbours draw the blurred page copy: one full-screen bitmap per card was the costliest thing on screen. */
+  front: boolean; interactive: boolean; glass: boolean; frosted: boolean; frame: { x: number; y: number }; onPress: () => void; onLongPress: () => void;
 }) {
   const { entry } = item;
   const info = describeOccurrence(item, now);
@@ -242,7 +246,7 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
           onLongPress={() => { release(false); onLongPress(); }} style={{ flex: 1 }}>
           <View style={[styles.face, { padding: compact ? 14 : 20 }, px && styles.pixelFace]}>
             {/* Frosted base: the page background, blurred and lined up with the screen, so the card reads as glass. */}
-            {glass && !px ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, backdrop]}><Backdrop offset={frame} /></Animated.View> : null}
+            {glass && frosted && !px && !image ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, backdrop]}><Backdrop offset={frame} /></Animated.View> : null}
             {image ? <>
               <Image testID="card-image" source={{ uri: image.uri }} blurRadius={image.frost ? Math.max(6, look.blur) : 0} resizeMode="cover" style={StyleSheet.absoluteFill} />
               {image.frost && <View testID="card-frost" pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />}
@@ -326,4 +330,5 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3 },
   dotActive: { width: 16 },
   empty: { flex: 1, minHeight: 140, borderRadius: metrics.radius.lg, borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 },
+  emptyActions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 6 },
 });

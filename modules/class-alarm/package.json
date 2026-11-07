@@ -1,0 +1,7 @@
+{
+  "name": "class-alarm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "课序上课闹钟：用 Android AlarmManager.setAlarmClock 排定、只管理课序自己创建的闹钟",
+  "main": "index.ts"
+}

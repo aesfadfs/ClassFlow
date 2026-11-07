@@ -9,6 +9,7 @@ export type ReminderSettings = {
   plans: boolean;      // also remind personal plans, not only courses
   sound: ReminderSound;
   vibration: ReminderVibration;
+  alarm: boolean;      // Android: reminders due within 24 hours ring as alarms (alarm volume, not muted by silent mode)
 };
 
 // Built-in tones are bundled files (scripts/make-reminder-sounds.mjs); 'default' is the system sound.
@@ -30,7 +31,7 @@ export function vibrationPattern(kind: ReminderVibration): number[] | null {
 
 export const LEAD_LEVELS = [5, 10, 15, 20, 30];
 export const GAP_LEVELS = [0, 15, 30, 45, 60];
-export const defaultReminders = (): ReminderSettings => ({ enabled: false, lead: 10, gap: 30, plans: false, sound: 'class_bell', vibration: 'long' });
+export const defaultReminders = (): ReminderSettings => ({ enabled: false, lead: 10, gap: 30, plans: false, sound: 'class_bell', vibration: 'long', alarm: false });
 
 export type Reminder = { id: string; fireAt: Date; title: string; body: string };
 
@@ -83,5 +84,23 @@ export function restoreReminders(value: unknown): ReminderSettings {
     plans: typeof raw.plans === 'boolean' ? raw.plans : base.plans,
     sound: SOUNDS.some(item => item.key === raw.sound) ? raw.sound as ReminderSound : base.sound,
     vibration: VIBRATIONS.some(item => item.key === raw.vibration) ? raw.vibration as ReminderVibration : base.vibration,
+    alarm: typeof raw.alarm === 'boolean' ? raw.alarm : base.alarm,
+  };
+}
+
+/** Alarms are only set for what is due soon: timetables change, and a stale alarm is worse than none. */
+export const ALARM_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * With alarm mode on, reminders due within the next 24 hours ring as alarms and
+ * the rest stay notifications (they become alarms on a later sync, when the app
+ * opens). With it off, everything is a notification and no alarm is kept.
+ */
+export function splitAlarms(reminders: Reminder[], now: Date, alarm: boolean): { alarms: Reminder[]; notifications: Reminder[] } {
+  if (!alarm) return { alarms: [], notifications: reminders };
+  const limit = now.getTime() + ALARM_WINDOW_MS;
+  return {
+    alarms: reminders.filter(reminder => reminder.fireAt.getTime() <= limit),
+    notifications: reminders.filter(reminder => reminder.fireAt.getTime() > limit),
   };
 }

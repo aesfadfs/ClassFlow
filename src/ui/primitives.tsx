@@ -81,6 +81,15 @@ export function Icon({ name, size = 20, color, strokeWidth = 1.65 }: { name: Ico
   </Svg>;
 }
 
+/** A soft diagonal highlight across a small card, like light catching glass. Nothing in pixel style or with reduced transparency. */
+export function GlassSheen({ radius = 0, strength = 1 }: { radius?: number; strength?: number }) {
+  const theme = useTheme();
+  const { reduceTransparency } = useAccessibility();
+  if (useGlass().style === 'pixel' || reduceTransparency) return null;
+  return <LinearGradient pointerEvents="none" colors={[theme.dark ? 'rgba(206,212,255,0.16)' : 'rgba(255,255,255,0.6)', 'rgba(255,255,255,0)']}
+    start={{ x: 0.1, y: 0 }} end={{ x: 0.7, y: 1 }} style={[StyleSheet.absoluteFill, { opacity: strength, borderRadius: radius }]} />;
+}
+
 export function Glass({ children, style, interactive = false }: { children?: React.ReactNode; style?: StyleProp<ViewStyle>; interactive?: boolean }) {
   const { reduceTransparency } = useAccessibility();
   const theme = useTheme();
@@ -234,8 +243,9 @@ export function Reveal({ children, delay = 0, distance = 8, style }: { children:
   return <Animated.View style={[style, motion]}>{children}</Animated.View>;
 }
 
-export function useUI(override?: GlassLook) {
-  const theme = useTheme();
+/** `scheme` is for the one component that sits above SchemeContext (the app shell) and knows the wallpaper palette itself. */
+export function useUI(override?: GlassLook, scheme?: 'light' | 'dark' | null) {
+  const theme = useTheme(scheme);
   const { reduceTransparency } = useAccessibility();
   const context = useGlass();
   const look = override ?? context;

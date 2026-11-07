@@ -38,7 +38,7 @@ npm run preview:web
 
 ## 3. 当前实现和关键文件
 
-当前版本为 0.1.16 / Android versionCode 18，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
+当前版本为 0.1.17 / Android versionCode 19，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
 
 已实现课表概览、周 / 日时间画布、课程与个人安排的增删改、拖动和时长调整、冲突提示、撤销、本地保存、JSON 备份、学期设置、CSV / HTML / JSON 导入和原生学校浏览器。支持浅色 / 深色与响应式布局。“拍照翻译”目前只是未来功能入口。
 
@@ -58,11 +58,19 @@ npm run preview:web
 | `tests/`、`examples/` | 单元 / 浏览器回归与虚构或脱敏课表 |
 | `app.json`、`scripts/with-android-gradle.cjs` | Expo 配置与 Gradle 兼容插件 |
 
+### 已整合的外部贡献（0.1.17，Gitee PR #1，frosty-cherry-blossoms，基于 0.1.10）
+
+在 0.1.17 中按 0.1.16 架构改写合入，没有直接合并原提交：壁纸系统（并入 `Appearance`，文件选择沿用 `expo-document-picker`，未新增 `expo-image-picker` / `expo-splash-screen`；视频用已有 `react-native-webview` 播放，见 `src/ui/VideoWallpaper.tsx`、`src/components/WallpaperFramer.tsx`）、首次启动引导 `src/components/Onboarding.tsx`、本地自动备份、周次日期范围、空状态按钮、返回键逐级、工具箱收起「＋」、窄格去校区前缀、翻页弹簧加快、课程卡片高光。性能上只有大课表面板与首张及相邻上一张 / 下一张卡片保留模糊背景副本。手机端面板改为在应用窗口内绘制以实现真实毛玻璃（`INLINE_SHEETS`），Web 仍用 Modal。
+
+未采用：PR 中的周视图空档折叠横条（按用户要求移除，节次排列已足够）、通知提醒（`expo-notifications` 新实现）和 `preferences.periods` 作息，因为 0.1.11 / 0.1.12 已有更完整的提醒与节次实现；PR 根目录的 `.patch` 文件与该提交内容相同，未收入。
+
+尚未真机验证：铃声闹钟（各厂商系统对前台服务和闹钟音量的处理、重启后重排）、视频壁纸（WebView 读取本地文件、自动播放、与 Android 模糊层叠加）、GIF 动画、拖框取景手势、内联面板的返回键与键盘避让、引导页权限请求。
+
 近期修复：学校页面改写 `Array.prototype.filter` 引起的读取失败；网格与隐藏列表重复识别；合并行星期和节次继承；注释误认课程；分段单双周；首次启动空白和旧示例迁移；部分勾选时的覆盖导入规则。不要重新引入这些问题。
 
 ## 4. 测试与当前验证范围
 
-本次打包前重新执行并通过：TypeScript 类型检查、27 项业务测试；最新版 APK 的 SHA-256 与 README 一致。本次没有重新构建 APK，也没有重新进行真机验收。
+0.1.17 发布前重新执行并通过：TypeScript 类型检查、43 项业务测试、全部浏览器回归和 `verify-android-import.ps1` 包内核验；APK 的 SHA-256 记录在 README 的 0.1.17 说明中。作者已真机试用铃声闹钟等功能，iOS 未验收。
 
 当前迁移执行环境只有 Node 可直接调用、npm 不在 PATH，实际检查使用 `node node_modules/typescript/bin/tsc --noEmit` 和 `node --experimental-strip-types --test tests/*.test.ts`，分别对应项目的 `typecheck` 和 `test` 脚本。新电脑使用完整 Node 安装即可按上面的 npm 命令运行。
 

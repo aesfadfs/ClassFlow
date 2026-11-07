@@ -9,22 +9,27 @@ import { Pager } from './src/components/Pager';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Calendar, DayStrip } from './src/components/Calendar';
-import { EntrySheet, ImportSheet, SettingsSheet } from './src/components/Sheets';
+import { EntrySheet, INLINE_SHEETS, ImportSheet, SettingsSheet } from './src/components/Sheets';
 import { COLORS, DAYS, createEntry, dateKey, parseTime, uid, dayOfWeek, emptyState, restoreScheduleState, entriesForDay, upcomingOccurrences, entriesForWeek, formatTime, freeWindows, isScheduleState, weekDates, weekNumber, type Entry, type Preferences, type ScheduleState } from './src/domain/schedule';
 import { analyzeImport } from './src/domain/import';
 import { exportText } from './src/services/files';
 import { cleanUpImages, pickImage } from './src/services/images';
-import { requestReminderPermission, sendTestReminder, syncReminders } from './src/services/notifications';
+import { alarmsSupported, requestReminderPermission, sendTestReminder, stopAlarmRinging, syncReminders } from './src/services/notifications';
 import { planReminders } from './src/domain/reminders';
 import { hainnu } from './src/features/schools';
-import { APPEARANCE_KEY, applyPreset, deletePreset, savePreset, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
+import { APPEARANCE_KEY, WALLPAPERS, wallpaperScheme, applyPreset, deletePreset, savePreset, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
 import { AccessibilityProvider, BlurTargetContext, Button, Icon, LiquidGlass, PressSurface, Reveal, haptic, setHapticsEnabled, useAccessibility, useUI, type IconName } from './src/ui/primitives';
-import { metrics, springs, useTheme } from './src/ui/theme';
+import { SchemeContext, metrics, springs, useTheme } from './src/ui/theme';
 import { AppBackground, BackgroundContext, GlassContext, GlassFill, fontFamily, frost, useGlass } from './src/ui/glass';
 import { GreetingCurtain } from './src/components/Greeting';
 import { LookSheet } from './src/components/LookSheet';
+import { GUIDE_STEPS, ONBOARDING_KEY, Onboarding } from './src/components/Onboarding';
 
 const STORAGE_KEY = 'classflow.schedule.v1';
+/** Newest timetable that still had entries: the fallback when the live copy is missing or unreadable. */
+const BACKUP_KEY = 'classflow.schedule.backup.v1';
+/** An unreadable live copy is parked here before a backup replaces it, so nothing is lost for good. */
+const DAMAGED_KEY = 'classflow.schedule.damaged.v1';
 type Tab = 'timetable' | 'planner' | 'tools';
 const NAV: { key: Tab; title: string; icon: IconName }[] = [
   { key: 'timetable', title: '我的课表', icon: 'calendar' },
@@ -39,7 +44,6 @@ export default function App() {
 function ClassFlow() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const theme = useTheme();
   const contentWidth = width - insets.left - insets.right;
   const mobile = contentWidth < 850 || height < 360;
   const compactHeight = height - insets.top - insets.bottom < 650;
@@ -61,6 +65,19 @@ function ClassFlow() {
   const transition = useSharedValue(1);
   const navigating = useRef(false);
   const pageMotion = useAnimatedStyle(() => ({ opacity: transition.get(), transform: [{ translateY: (1 - transition.get()) * 12 }, { scale: 0.99 + transition.get() * 0.01 }] }));
+  // The tools tab has nothing to add, so the dock's "+" folds away there and the tab bar takes the room.
+  const [dockIntent, setDockIntent] = useState<Tab>(tab);
+  useEffect(() => { setDockIntent(tab); }, [tab]);
+  const hidePlus = dockIntent === 'tools' && !detail;
+  const plusOpen = useSharedValue(hidePlus ? 0 : 1);
+  useEffect(() => {
+    const target = hidePlus ? 0 : 1;
+    plusOpen.set(reduceMotion ? target : withTiming(target, { duration: 160, easing: Easing.out(Easing.cubic) }));
+  }, [plusOpen, hidePlus, reduceMotion]);
+  const plusReveal = useAnimatedStyle(() => {
+    const open = Math.max(0, Math.min(1, plusOpen.get()));
+    return { width: open * 64, marginLeft: (open - 1) * 10, opacity: Math.max(0, open * 1.6 - 0.6) };
+  });
   const [editor, setEditor] = useState<{ entry: Entry; isNew: boolean } | null>(null);
   const [editorClosing, setEditorClosing] = useState(false);
   const [sheet, setSheet] = useState<'import' | 'settings' | 'look' | null>(null);
@@ -69,11 +86,16 @@ function ClassFlow() {
   const [storageWarning, setStorageWarning] = useState('');
   const [appearance, setAppearance] = useState<Appearance>(() => restoreAppearance(null));
   const [appearanceLoaded, setAppearanceLoaded] = useState(false);
+  // A colour wallpaper (or the user's choice over a photo) can ask for one palette; everything below follows it.
+  const scheme = wallpaperScheme(appearance);
+  const theme = useTheme(scheme);
   const blurTarget = useRef<View>(null);
   useEffect(() => { setHapticsEnabled(appearance.haptics); }, [appearance.haptics]);
   const scrollRef = useRef<ScrollView>(null);
   useEffect(() => { setEditorClosing(false); }, [editor?.entry.id]);
   useEffect(() => { setSheetClosing(false); }, [sheet]);
+  /** Step of the first-run guide, or null when it is not showing. */
+  const [guide, setGuide] = useState<number | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -92,8 +114,23 @@ function ClassFlow() {
     }));
   }
   useEffect(() => {
-    if (!detail || editor || sheet) return;
-    const back = () => { navigate(tab, false); return true; };
+    // Back walks up one level: open sheet → detail → overview → 课表 tab → leave the app.
+    // On phones sheets live inside the app window (no Modal), so their back press lands here too;
+    // on the web the Modal handles its own Escape.
+    const back = () => {
+      if (editor || sheet) {
+        if (!INLINE_SHEETS) return false;
+        if (editor) setEditorClosing(true); else setSheetClosing(true);
+        return true;
+      }
+      if (guide !== null) {
+        if (guide > 0) { setGuide(guide - 1); return true; }
+        return false;
+      }
+      if (detail) { navigate(tab, false); return true; }
+      if (Platform.OS !== 'web' && tab !== 'timetable') { selectTab('timetable'); return true; }
+      return false;
+    };
     if (Platform.OS !== 'web') {
       const subscription = BackHandler.addEventListener('hardwareBackPress', back);
       return () => subscription.remove();
@@ -101,7 +138,28 @@ function ClassFlow() {
     const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') back(); };
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
-  }, [detail, tab, editor, sheet, reduceMotion]);
+  }, [detail, tab, editor, sheet, reduceMotion, guide]);
+
+  // First-run guide: only on a real first launch. Anyone who already has a saved timetable
+  // (an upgrade) is marked as done without seeing it.
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.multiGet([ONBOARDING_KEY, STORAGE_KEY]).then(([[, done], [, saved]]) => {
+      if (!active || done) return;
+      if (saved) { void AsyncStorage.setItem(ONBOARDING_KEY, '1').catch(() => {}); return; }
+      setGuide(0);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  // A sheet opened from the guide moves it on once that sheet closes.
+  const guideWaiting = useRef(false);
+  useEffect(() => {
+    if (sheet !== null || !guideWaiting.current) return;
+    guideWaiting.current = false;
+    setGuide(current => current === null ? null : Math.min(GUIDE_STEPS - 1, current + 1));
+  }, [sheet]);
+  function openFromGuide(next: 'import' | 'look') { guideWaiting.current = true; setSheet(next); }
+  function finishGuide() { haptic('success'); setGuide(null); void AsyncStorage.setItem(ONBOARDING_KEY, '1').catch(() => {}); }
 
   useEffect(() => {
     let active = true;
@@ -119,9 +177,25 @@ function ClassFlow() {
   }, [appearance, appearanceLoaded]);
   useEffect(() => {
     let active = true;
-    AsyncStorage.getItem(STORAGE_KEY).then(raw => {
-      if (!active || !raw) return;
-      const parsed = restoreScheduleState(raw);
+    AsyncStorage.getItem(STORAGE_KEY).then(async raw => {
+      if (!active) return;
+      let parsed: ScheduleState | null = null;
+      try { parsed = raw ? restoreScheduleState(raw) : null; } catch { parsed = null; }
+      if (!parsed) {
+        // Live copy missing or damaged: fall back to the newest non-empty snapshot. A first launch has
+        // neither, so it still opens blank.
+        const backup = await AsyncStorage.getItem(BACKUP_KEY);
+        let restored: ScheduleState | null = null;
+        try { restored = backup ? restoreScheduleState(backup) : null; } catch { restored = null; }
+        if (!restored || !restored.entries.length) {
+          if (raw) throw new Error('unreadable schedule');
+          return;
+        }
+        if (raw) await AsyncStorage.setItem(DAMAGED_KEY, raw);
+        parsed = restored;
+        if (active) setToast({ message: `本地课表无法读取，已从自动备份恢复 ${restored.entries.length} 条记录` });
+      }
+      if (!active) return;
       setState(parsed);
       setWeek(Math.min(parsed.preferences.semesterWeeks, Math.max(1, weekNumber(new Date(), parsed.preferences.semesterStart))));
     }).catch(() => { if (active) { setStorageEnabled(false); setStorageWarning('本地课表暂时无法读取。当前显示空白课表；原数据未被覆盖。'); } })
@@ -132,7 +206,10 @@ function ClassFlow() {
     if (loading || !storageEnabled) return;
     setSaveStatus('saving');
     const snapshot = JSON.stringify(state);
-    writeQueue.current = writeQueue.current.then(() => AsyncStorage.setItem(STORAGE_KEY, snapshot)).then(() => { setSaveStatus('saved'); setStorageWarning(''); }).catch(() => { setSaveStatus('error'); setStorageWarning('本地保存失败。请导出备份，避免丢失本次修改。'); });
+    // Only non-empty timetables become the backup, so clearing everything can still be walked back.
+    const keepBackup = state.entries.length > 0;
+    writeQueue.current = writeQueue.current.then(() => AsyncStorage.setItem(STORAGE_KEY, snapshot))
+      .then(() => keepBackup ? AsyncStorage.setItem(BACKUP_KEY, snapshot).catch(() => {}) : undefined).then(() => { setSaveStatus('saved'); setStorageWarning(''); }).catch(() => { setSaveStatus('error'); setStorageWarning('本地保存失败。请导出备份，避免丢失本次修改。'); });
   }, [state, loading, storageEnabled]);
   useEffect(() => { const timer = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(timer); }, []);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(null), toast.undo ? 7000 : 3500); return () => clearTimeout(timer); }, [toast]);
@@ -230,6 +307,24 @@ function ClassFlow() {
     commit({ ...state, demo: false, entries: [] }); setSheetClosing(true);
     setToast({ message: '示例课表已清空', undo: () => { setState(previous); setToast(null); } });
   }
+  /** Brings back the newest non-empty snapshot kept on this device, with undo. */
+  async function restoreLocalBackup() {
+    let restored: ScheduleState;
+    try {
+      const raw = await AsyncStorage.getItem(BACKUP_KEY);
+      if (!raw) { notify('这台设备上还没有自动备份'); return; }
+      restored = restoreScheduleState(raw);
+    } catch { notify('自动备份读取失败'); return; }
+    if (!restored.entries.length) { notify('自动备份里没有课程'); return; }
+    if (JSON.stringify(restored) === JSON.stringify(state)) { notify('当前课表已经和自动备份一致'); return; }
+    const previous = state;
+    const previousWeek = week;
+    commit(restored);
+    setWeek(Math.min(restored.preferences.semesterWeeks, Math.max(1, weekNumber(now, restored.preferences.semesterStart))));
+    setSheetClosing(true);
+    haptic('success');
+    setToast({ message: `已从自动备份恢复 ${restored.entries.length} 条记录`, undo: () => { setState(previous); setWeek(previousWeek); setToast(null); } });
+  }
   function writeBackup() {
     return exportText(JSON.stringify(state, null, 2), `课序-备份-${dateKey(now)}.json`);
   }
@@ -244,6 +339,8 @@ function ClassFlow() {
   const gutter = contentWidth < 360 ? 12 : mobile ? 16 : 32;
   const tabIndex = NAV.findIndex(item => item.key === tab);
   const selectTab = (next: Tab) => {
+    // Fold the dock's "+" on the tap itself; the page slide commits `tab` only once it lands.
+    setDockIntent(next);
     if (detail) { navigate(next, false); return; }
     if (next === tab) return;
     haptic();
@@ -257,30 +354,39 @@ function ClassFlow() {
     [appearance.glassPanel, appearance.glassBlur, appearance.glassCard, appearance.glow, appearance.uiStyle, appearance.font]);
   const pixel = appearance.uiStyle === 'pixel';
   const face = fontFamily(appearance.font);
-  const ui = useUI(glassLook);
+  const ui = useUI(glassLook, scheme);
   // Keep a week of class reminders scheduled: after any timetable or setting change, and whenever the app comes back.
   const reminderSettings = appearance.reminders;
   useEffect(() => {
     if (loading || !appearanceLoaded || Platform.OS === 'web') return;
     const sync = () => { void syncReminders(planReminders(state.entries, state.preferences, new Date(), reminderSettings), reminderSettings).catch(() => {}); };
     const timer = setTimeout(sync, 800);
-    const subscription = AppState.addEventListener('change', next => { if (next === 'active') sync(); });
+    const subscription = AppState.addEventListener('change', next => { if (next === 'active') { stopAlarmRinging(); sync(); } });
     return () => { clearTimeout(timer); subscription.remove(); };
   }, [loading, appearanceLoaded, state.entries, state.preferences, reminderSettings]);
   const narrowToolbar = contentWidth < 520;
   // Numbered periods only when the user picked a bell schedule in settings; never inferred.
   const periodTimes = useMemo(() => appearance.periodPreset === 'guilinyang' && hainnu.periodTimeProfile
     ? hainnu.periodTimeProfile.times.map(time => ({ start: parseTime(time.start), end: parseTime(time.end) })) : null, [appearance.periodPreset]);
-  const background = useMemo(() => ({ uri: appearance.background, dim: appearance.backgroundDim }), [appearance.background, appearance.backgroundDim]);
+  const background = useMemo(() => ({
+    uri: appearance.background, dim: appearance.backgroundDim, kind: appearance.backgroundKind, frame: appearance.backgroundFrame,
+    fill: WALLPAPERS.find(item => item.id === appearance.backdrop)?.colors ?? null,
+  }), [appearance.background, appearance.backgroundDim, appearance.backgroundKind, appearance.backgroundFrame, appearance.backdrop]);
   const cardImageLookup = useCallback((entry: Entry) => cardImageFor(appearance, entry) ?? undefined, [appearance.cardImages, appearance.cardFrost]);
   const openEditor = useCallback((entry: Entry) => setEditor({ entry, isNew: false }), []);
   const addLatest = useRef(add);
   addLatest.current = add;
   const addCourse = useCallback(() => addLatest.current('course'), []);
+  const openImport = useCallback(() => setSheet('import'), []);
   const upcoming = useMemo(() => upcomingOccurrences(state.entries, state.preferences, now, { once: true }), [state.entries, state.preferences, now]);
+  // 「第 10 周」 carries its date range underneath, so you know where you are at a glance.
+  const weekRange = `${dates[0].getMonth() + 1}/${dates[0].getDate()}–${dates[6].getMonth() + 1}/${dates[6].getDate()}`;
   const weekControl = <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
     <Button small icon="left" label="上一周" variant="ghost" disabled={week <= 1} onPress={() => { haptic(); setWeek(week - 1); }} />
-    <Text accessibilityLiveRegion="polite" style={[styles.weekNumber, { color: theme.ink }]}>第 {week} 周</Text>
+    <View accessible accessibilityLiveRegion="polite" accessibilityLabel={`第 ${week} 周，${weekRange.replace('–', ' 到 ')}`} style={styles.weekLabel}>
+      <Text style={[styles.weekNumber, { color: theme.ink }]}>第 {week} 周</Text>
+      <Text numberOfLines={1} maxFontSizeMultiplier={1.1} style={[styles.weekRange, { color: theme.muted }]}>{weekRange}</Text>
+    </View>
     <Button small icon="right" label="下一周" variant="ghost" disabled={week >= state.preferences.semesterWeeks} onPress={() => { haptic(); setWeek(week + 1); }} />
   </View>;
 
@@ -290,7 +396,7 @@ function ClassFlow() {
     <Text accessibilityLiveRegion="polite" style={ui.body}>正在加载课表</Text>
   </View>;
 
-  return <GlassContext.Provider value={glassLook}><BackgroundContext.Provider value={background}><BlurTargetContext.Provider value={blurTarget}><View style={[styles.shell, { backgroundColor: theme.bg }]}>
+  return <SchemeContext.Provider value={scheme}><GlassContext.Provider value={glassLook}><BackgroundContext.Provider value={background}><BlurTargetContext.Provider value={blurTarget}><View style={[styles.shell, { backgroundColor: theme.bg }]}>
     <StatusBar barStyle={theme.dark ? 'light-content' : 'dark-content'} />
     <BlurTargetView ref={blurTarget} style={[styles.root, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
     <AppBackground testID={appearance.background ? 'custom-background' : undefined} />
@@ -329,7 +435,7 @@ function ClassFlow() {
               </View>
             </View>}
             {item.key === 'timetable' && <>
-              <UpNextStack items={upcoming} now={now} imageFor={cardImageLookup} onOpen={openEditor} onAdd={addCourse} />
+              <UpNextStack items={upcoming} now={now} imageFor={cardImageLookup} onOpen={openEditor} onAdd={addCourse} onImport={openImport} />
               <Button icon="calendar" label="打开完整课表" style={{ alignSelf: 'stretch' }} onPress={() => navigate('timetable', true)}>查看完整课表</Button>
             </>}
             {item.key === 'planner' && <>
@@ -356,7 +462,7 @@ function ClassFlow() {
               {([
                 { icon: 'import', title: '课表导入', detail: '登录学校教务自动识别，或导入课表文件', action: () => setSheet('import') },
                 { icon: 'file', title: '课表备份', detail: '导出课程、个人安排和学期设置', action: exportBackup },
-                { icon: 'sparkles', title: '界面风格', detail: '一键切换预设，或保存自己的风格与字体', action: () => setSheet('look') },
+                { icon: 'sparkles', title: '外观与壁纸', detail: '壁纸（图片 / 动图 / 视频）、玻璃质感、风格与字体', action: () => setSheet('look') },
                 { icon: 'settings', title: '偏好设置', detail: '管理学期起始日期与周数', action: () => setSheet('settings') },
               ] satisfies { icon: IconName; title: string; detail: string; action?: () => void }[]).map(tool => {
                 const row = <View style={[styles.toolRow, { padding: compactHeight ? 12 : 16, minHeight: compactHeight ? 60 : 80, flexDirection: landscape ? 'column' : 'row' }]}>
@@ -446,12 +552,18 @@ function ClassFlow() {
         <LiquidGlass interactive style={styles.dockBar}>
           <DockTabs tab={tab} position={pagerPosition} pending={pagerPending} enabled={!detail} onSelect={selectTab} />
         </LiquidGlass>
-        <LiquidGlass interactive accent={theme.dark ? 'rgba(150,165,255,0.92)' : 'rgba(54,75,182,0.9)'} style={styles.dockAction}>
-          <PressSurface accessibilityRole="button" accessibilityLabel={tab === 'planner' ? '添加个人安排' : '添加课程'} scale={0.9} style={[styles.dockActionPress, pixel && { borderRadius: 0 }]}
-            onPress={() => { haptic('medium'); add(tab === 'planner' ? 'plan' : 'course'); }}>
-            <Icon name="plus" size={26} strokeWidth={2.2} color={theme.onAccent} />
-          </PressSurface>
-        </LiquidGlass>
+        {/* The glass button keeps a fixed size inside a clipping wrapper whose width animates. */}
+        <Animated.View pointerEvents={hidePlus ? 'none' : 'auto'} importantForAccessibility={hidePlus ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={hidePlus} aria-hidden={hidePlus}
+          style={[styles.dockAction, styles.dockActionClip, plusReveal]}>
+          <View style={styles.dockActionFixed}>
+            <LiquidGlass interactive accent={theme.dark ? 'rgba(150,165,255,0.92)' : 'rgba(54,75,182,0.9)'} style={styles.dockAction}>
+              <PressSurface accessibilityRole="button" accessibilityLabel={tab === 'planner' ? '添加个人安排' : '添加课程'} scale={0.9} style={[styles.dockActionPress, pixel && { borderRadius: 0 }]}
+                onPress={() => { haptic('medium'); add(tab === 'planner' ? 'plan' : 'course'); }}>
+                <Icon name="plus" size={26} strokeWidth={2.2} color={theme.onAccent} />
+              </PressSurface>
+            </LiquidGlass>
+          </View>
+        </Animated.View>
       </View>
     </View>}
     {toast && <View pointerEvents="box-none" style={[styles.toastWrap, { bottom: (mobile ? 86 : 24) + insets.bottom }]}>
@@ -464,17 +576,30 @@ function ClassFlow() {
         </View>
       </Reveal>
     </View>}
+    {/* Under the sheets it opens, above everything else. */}
+    {guide !== null && <Onboarding step={guide} remindersOn={appearance.reminders.enabled} onStep={setGuide} onFinish={finishGuide}
+      onImport={() => openFromGuide('import')} onWallpaper={() => openFromGuide('look')}
+      onReminders={async () => { if (await enableReminders()) updateAppearance({ reminders: { ...appearance.reminders, enabled: true } }); }} />}
     {editor && <EntrySheet key={editor.entry.id} {...editor} closingRequested={editorClosing} entries={state.entries} semesterWeeks={state.preferences.semesterWeeks} onClose={() => setEditor(null)} onSave={saveEntry} onDelete={deleteEntry}
       cardImage={cardImageFor(appearance, editor.entry)} onPickImage={() => chooseImage('card')} />}
     {sheet === 'look' && <LookSheet closingRequested={sheetClosing} appearance={appearance} onClose={() => setSheet(null)} onAppearance={updateAppearance}
       onApply={preset => setAppearance(current => applyPreset(current, preset))}
-      onSavePreset={name => { try { setAppearance(current => savePreset(current, name, `custom:${uid()}`)); notify(`已保存预设「${name.trim().slice(0, 20)}」`); return null; } catch (error) { return error instanceof Error ? error.message : '保存失败'; } }}
+      onSavePreset={name => {
+        // Validate here, outside the state updater: an error thrown inside setAppearance(current => …)
+        // runs during React's render and is not caught by this try, which crashed the app.
+        try {
+          const next = savePreset(appearance, name, `custom:${uid()}`);
+          setAppearance(next);
+          notify(`已保存预设「${name.trim().slice(0, 20)}」`);
+          return null;
+        } catch (error) { return error instanceof Error ? error.message : '保存失败'; }
+      }}
       onDeletePreset={id => { const previous = appearance; setAppearance(current => deletePreset(current, id)); setToast({ message: '已删除预设', undo: () => { setAppearance(previous); setToast(null); } }); }} />}
     {sheet === 'import' && <ImportSheet closingRequested={sheetClosing} semesterWeeks={state.preferences.semesterWeeks} existingEntries={state.entries} demo={state.demo} onClose={() => setSheet(null)} onImport={importEntries} />}
-    {sheet === 'settings' && <SettingsSheet closingRequested={sheetClosing} preferences={state.preferences} onSave={savePreferences} onClose={() => setSheet(null)} onExport={writeBackup} demo={state.demo} onClearDemo={clearDemo}
-      appearance={appearance} onAppearance={updateAppearance} onPickBackground={() => chooseImage('background')} onEnableReminders={enableReminders}
-      onTestReminder={() => { void sendTestReminder(appearance.reminders).then(sent => notify(sent ? '3 秒后会收到一条测试提醒' : '没有通知权限，无法发送测试提醒')).catch(() => notify('测试提醒发送失败')); }} />}
-  </View></BlurTargetContext.Provider></BackgroundContext.Provider></GlassContext.Provider>;
+    {sheet === 'settings' && <SettingsSheet closingRequested={sheetClosing} preferences={state.preferences} onSave={savePreferences} onClose={() => setSheet(null)} onExport={writeBackup} onRestoreLocal={restoreLocalBackup} demo={state.demo} onClearDemo={clearDemo}
+      appearance={appearance} onAppearance={updateAppearance} onEnableReminders={enableReminders}
+      onTestReminder={() => { void sendTestReminder(appearance.reminders).then(sent => notify(sent ? (appearance.reminders.alarm && alarmsSupported() ? '3 秒后会响一次测试闹钟，锁屏等几秒试试' : '3 秒后会收到一条测试提醒') : '没有通知权限，无法发送测试提醒')).catch(() => notify('测试提醒发送失败')); }} />}
+  </View></BlurTargetContext.Provider></BackgroundContext.Provider></GlassContext.Provider></SchemeContext.Provider>;
 }
 
 function Brand() {
@@ -573,6 +698,8 @@ const styles = StyleSheet.create({
   dockRow: { width: '100%', maxWidth: 460, flexDirection: 'row', alignItems: 'center', gap: 10 },
   dockBar: { flex: 1, height: 64, padding: 5 },
   dockAction: { width: 64, height: 64 },
+  dockActionClip: { overflow: 'hidden' },
+  dockActionFixed: { position: 'absolute', left: 0, top: 0, width: 64, height: 64 },
   dockActionPress: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: metrics.radius.full },
   dragToggle: { minHeight: 36, borderRadius: metrics.radius.full, borderWidth: 1, flexShrink: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: metrics.space.md },
@@ -597,7 +724,9 @@ const styles = StyleSheet.create({
   calendarToolbar: { paddingVertical: 12, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   calendarFooter: { paddingHorizontal: 12, paddingVertical: 4, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 4, borderTopWidth: 1 },
   controlGroup: { borderRadius: metrics.radius.md, alignSelf: 'center', flexShrink: 0 },
+  weekLabel: { alignItems: 'center', minWidth: 52, flexShrink: 1 },
   weekNumber: { fontSize: 13, minWidth: 52, textAlign: 'center', fontWeight: '600', fontVariant: ['tabular-nums'] },
+  weekRange: { fontSize: 10, textAlign: 'center', fontVariant: ['tabular-nums'] },
   sideCard: { padding: 16, gap: 10 },
   summary: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: metrics.radius.lg, gap: 16 },
   slot: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 },

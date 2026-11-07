@@ -4,9 +4,9 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { snapPlacement, type Placement } from '../domain/canvas';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { COLORS, DAYS, dateKey, entriesForWeek, formatTime, layoutDay, type Entry } from '../domain/schedule';
+import { COLORS, DAYS, compactLocation, dateKey, entriesForWeek, formatTime, layoutDay, type Entry } from '../domain/schedule';
 import { minuteToY, periodRows, placeRows, type PeriodTime } from '../domain/periods';
-import { haptic, Icon, PRESS_DELAY, Reveal, useAccessibility } from '../ui/primitives';
+import { GlassSheen, haptic, Icon, PRESS_DELAY, Reveal, useAccessibility } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
 
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -189,6 +189,7 @@ function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWi
       height <= 30 && styles.shortCourse,
       reduceMotion && pressed && { opacity: 0.72 },
     ]}>
+      <GlassSheen radius={metrics.radius.sm} strength={0.55} />
       <View style={styles.courseLabel}>
         {plan && roomy && <Icon name="leaf" size={13} color={text} />}
         <Text numberOfLines={height > 78 ? 3 : 2} maxFontSizeMultiplier={1.3} style={[styles.courseTitle, { fontSize: roomy ? 15 : baseWidth < 65 ? 10 : metrics.type.caption, color: theme.ink }]}>
@@ -196,9 +197,12 @@ function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWi
         </Text>
       </View>
       {height >= 40 && baseWidth >= 65 && <Text numberOfLines={1} style={[styles.courseTime, { color: roomy ? theme.secondary : theme.ink }]}>{time}</Text>}
-      {height >= 65 && !!entry.location && <View style={styles.courseLocation}>
+      {height >= (roomy ? 65 : 46) && !!entry.location && <View style={styles.courseLocation}>
         {roomy && <Icon name="pin" size={12} color={text} />}
-        <Text numberOfLines={1} style={[styles.courseDetail, { color: theme.secondary }]}>{entry.location}</Text>
+        {/* Narrow week cells drop the campus prefix so the room number survives. */}
+        {roomy
+          ? <Text numberOfLines={1} style={[styles.courseDetail, { color: theme.secondary }]}>{entry.location}</Text>
+          : <Text numberOfLines={2} maxFontSizeMultiplier={1.1} style={[styles.courseDetail, styles.narrowDetail, { color: theme.secondary }]}>{compactLocation(entry.location)}</Text>}
       </View>}
       {roomy && height >= 102 && !!entry.teacher && <Text numberOfLines={1} style={[styles.courseDetail, { color: theme.secondary }]}>{entry.teacher}</Text>}
     </Animated.View>}
@@ -290,19 +294,24 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
           {row.label !== undefined && <Text style={[styles.periodNumber, { color: theme.ink }]}>{row.label}</Text>}
           <Text style={[styles.periodTime, { color: theme.secondary }]}>{formatTime(row.start)}</Text>
           <Text style={[styles.periodTime, { color: theme.secondary }]}>{formatTime(row.end)}</Text>
-        </View>) : hours.map(hour => <Text key={hour} style={[styles.hour, { top: (hour - firstHour) * hourHeight - 8, color: theme.secondary }]}>{formatTime(hour * 60)}</Text>)}
+        </View>) : hours.map(hour => <Text key={hour} style={[styles.hour, { top: minuteOffset(hour * 60) - 8, color: theme.secondary }]}>{formatTime(hour * 60)}</Text>)}
       </View>
       <View style={{ flex: 1, minWidth: 0 }} onLayout={event => setViewportWidth(event.nativeEvent.layout.width)}>
       <View onLayout={event => setCanvasWidth(event.nativeEvent.layout.width)} style={[styles.columns, { width: trackWidth, height, borderBottomColor: theme.line }]}>
         {visibleDays.map(index => {
           const currentDay = dateKey(dates[index]) === today;
-          const showCurrentTime = currentDay && (byPeriod ? currentMinute >= rows[0].start && currentMinute <= rows[rows.length - 1].end : currentMinute >= firstHour * 60 && currentMinute < lastHour * 60);
+          const showCurrentTime = currentDay && (byPeriod ? currentMinute >= rows[0].start && currentMinute <= rows[rows.length - 1].end
+            : currentMinute >= firstHour * 60 && currentMinute < lastHour * 60);
           const Column = singleDay ? Reveal : View;
           return <Column
             key={index}
             {...(singleDay ? { distance: 0 } : {})}
-            style={[styles.dayColumn, { borderColor: theme.line }, currentDay && !singleDay && { backgroundColor: theme.soft }]}
+            style={[styles.dayColumn, { borderColor: theme.line }]}
           >
+            {/* Today in the week view: no filled band, just the column's outline glowing softly. */}
+            {currentDay && !singleDay && <View pointerEvents="none" style={[styles.todayGlow, theme.dark
+              ? { borderColor: 'rgba(176,186,255,0.55)', boxShadow: '0 0 14px rgba(150,165,255,0.35), inset 0 0 12px rgba(150,165,255,0.16)' }
+              : { borderColor: 'rgba(54,75,182,0.42)', boxShadow: '0 0 14px rgba(84,110,255,0.26), inset 0 0 12px rgba(84,110,255,0.10)' }]} />}
             {byPeriod ? rows.map(row => <Pressable
               key={row.start}
               accessibilityRole="button"
@@ -316,7 +325,7 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
               onPress={event => onEmpty(index, Math.min(1434, hour * 60 + Math.floor(event.nativeEvent.locationY / hourHeight * 12) * 5))}
               style={({ pressed }) => [
                 styles.emptySlot,
-                { height: hourHeight, top: (hour - firstHour) * hourHeight, borderColor: theme.line },
+                { height: hourHeight, top: minuteOffset(hour * 60), borderColor: theme.line },
                 pressed && { backgroundColor: theme.tint },
               ]}
             />)}
@@ -334,7 +343,7 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
               left: columnWidth * (dayPosition + lane / lanes), width: columnWidth / lanes,
               height: cardHeight, paddingHorizontal: singleDay ? 5 : 2 }} />;
         }))}
-        {drag && <View pointerEvents="none" style={[styles.snapGuide, { top: minuteOffset(drag.start), height: Math.max(12, (drag.end - drag.start) / 60 * hourHeight),
+        {drag && <View pointerEvents="none" style={[styles.snapGuide, { top: minuteOffset(drag.start), height: Math.max(12, minuteOffset(drag.end) - minuteOffset(drag.start)),
           left: singleDay ? 0 : drag.day * canvasWidth / 7, width: canvasWidth / visibleDays.length, borderColor: theme.blue }]}>
           <Text style={[styles.snapLabel, { color: theme.onAccent, backgroundColor: theme.blue }]}>{formatTime(drag.start)}–{formatTime(drag.end)}</Text>
         </View>}
@@ -346,6 +355,7 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
 }
 
 const styles = StyleSheet.create({
+  todayGlow: { position: 'absolute', top: 0, bottom: 0, left: 1, right: 1, borderWidth: 1, borderRadius: metrics.radius.md },
   canvasHint: { fontSize: 11, paddingLeft: 16, paddingTop: 5, paddingBottom: 7 },
   resizeHandle: { position: 'absolute', bottom: 0, left: '20%', right: '20%', height: 14, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 3 },
   resizeGrip: { width: 20, height: 3, borderRadius: 2, opacity: 0.6 },
@@ -382,6 +392,7 @@ const styles = StyleSheet.create({
   courseTime: { fontSize: 10, fontVariant: ['tabular-nums'] },
   courseLocation: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   courseDetail: { fontSize: 11, flexShrink: 1 },
+  narrowDetail: { fontSize: 9, lineHeight: 11 },
   nowLine: { height: StyleSheet.hairlineWidth, position: 'absolute', left: 0, right: 0 },
   nowDot: { position: 'absolute', top: -2.5, left: 0, width: 6, height: 6, borderRadius: 3 },
 });

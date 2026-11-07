@@ -1,11 +1,18 @@
 import React, { createContext, useCallback, useContext, useId, useRef, useState } from 'react';
 import { Image, Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Defs, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAccessibility } from './primitives';
 import { useTheme, type Theme } from './theme';
+import { VideoWallpaper } from './VideoWallpaper';
+import type { BackgroundKind, WallpaperFrame } from '../domain/appearance';
 
-/** The page background: the user's photo (and its veil), or null for the default ambient colours. */
-export const BackgroundContext = createContext<{ uri: string | null; dim: number }>({ uri: null, dim: 0.5 });
+/**
+ * The page background: the user's wallpaper file (photo, GIF or video, with its veil and framing),
+ * else a colour wallpaper (`fill`), else null for the default ambient colours.
+ */
+export type BackgroundInfo = { uri: string | null; dim: number; kind?: BackgroundKind; frame?: WallpaperFrame | null; fill?: string[] | null };
+export const BackgroundContext = createContext<BackgroundInfo>({ uri: null, dim: 0.5 });
 
 /**
  * How the glass looks, adjustable in settings: panel fill opacity, how much the
@@ -95,13 +102,26 @@ export function Ambient() {
 /** Whatever sits behind the whole app; `blur` frosts a photo for glass surfaces. */
 export function AppBackground({ blur = 0, testID }: { blur?: number; testID?: string }) {
   const theme = useTheme();
-  const { uri, dim } = useContext(BackgroundContext);
+  const { uri, dim, kind = 'image', frame, fill } = useContext(BackgroundContext);
   const { style } = useContext(GlassContext);
-  if (!uri) return style === 'pixel' ? <PixelBackdrop /> : <Ambient />;
-  return <View testID={testID} pointerEvents="none" style={StyleSheet.absoluteFill}>
-    <Image source={{ uri }} blurRadius={blur} resizeMode="cover" style={StyleSheet.absoluteFill} />
+  if (!uri) {
+    if (fill?.length) return <LinearGradient testID={testID} pointerEvents="none" colors={(fill.length > 1 ? fill : [fill[0], fill[0]]) as [string, string, ...string[]]}
+      start={{ x: 0, y: 0 }} end={{ x: 0.35, y: 1 }} style={StyleSheet.absoluteFill} />;
+    return style === 'pixel' ? <PixelBackdrop /> : <Ambient />;
+  }
+  return <View testID={testID} pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden', backgroundColor: theme.bg }]}>
+    {kind === 'video' ? <VideoWallpaper uri={uri} /> : <FramedImage uri={uri} frame={frame} blur={blur} animated={kind === 'gif'} />}
     <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.bg, opacity: dim }]} />
   </View>;
+}
+
+/** The photo filling its box: the chosen frame stretched over the screen, or a centred cover. */
+function FramedImage({ uri, frame, blur, animated }: { uri: string; frame?: WallpaperFrame | null; blur: number; animated: boolean }) {
+  // Decode at screen size; GIFs keep the default so Android still animates them.
+  const resizeMethod = animated ? 'auto' : 'resize';
+  if (!frame) return <Image source={{ uri }} blurRadius={blur} resizeMode="cover" resizeMethod={resizeMethod} fadeDuration={0} style={StyleSheet.absoluteFill} />;
+  return <Image source={{ uri }} blurRadius={blur} resizeMode="stretch" resizeMethod={resizeMethod} fadeDuration={0}
+    style={{ position: 'absolute', width: `${100 / frame.w}%`, height: `${100 / frame.h}%`, left: `${-(frame.x / frame.w) * 100}%`, top: `${-(frame.y / frame.h) * 100}%` }} />;
 }
 
 /**
@@ -127,6 +147,10 @@ export function useScreenOffset() {
 export function Backdrop({ offset, blur }: { offset: { x: number; y: number }; blur?: number }) {
   const { width, height } = useWindowDimensions();
   const look = useGlass();
+  const theme = useTheme();
+  const { uri, kind } = useContext(BackgroundContext);
+  // A second copy of a GIF or video would play twice; a plain frosted wash stands in for it.
+  if (uri && kind && kind !== 'image') return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.bg, opacity: 0.55 }]} />;
   return <View pointerEvents="none" style={{ position: 'absolute', left: -offset.x, top: -offset.y, width, height }}>
     <AppBackground blur={blur ?? look.blur} />
   </View>;
@@ -150,18 +174,25 @@ export function frost(theme: Theme, strong = false, look: GlassLook = DEFAULT_GL
 /**
  * Frosted-glass layer for any rounded surface: drop it in as the first child.
  * Over the ambient colours the translucent fill of the surface is enough; over
- * a photo it draws the photo blurred underneath, like a frosted pane.
+ * a photo it adds a tinted pane. Only `strong` surfaces (the dense timetable grid)
+ * draw the blurred photo underneath: a full-screen blurred bitmap per small card
+ * was the most expensive thing on screen and washed the photo into flat mud, while
+ * the live photo showing through a tint is sharper and cheaper.
  */
 export function GlassFill({ radius, strong = false }: { radius: number; strong?: boolean }) {
   const theme = useTheme();
   const { uri } = useContext(BackgroundContext);
   const { reduceTransparency } = useAccessibility();
   const look = useGlass();
-  const { ref, onLayout, offset } = useScreenOffset();
   // Pixel surfaces are solid blocks: no frosted photo underneath.
   if (!uri || reduceTransparency || look.style === 'pixel') return null;
-  return <View ref={ref} onLayout={onLayout} pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]}>
-    <Backdrop offset={offset} />
+  return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]}>
+    {strong && look.blur > 0 && <PlacedBackdrop />}
     <View style={[StyleSheet.absoluteFill, { backgroundColor: frost(theme, strong, look).fill }]} />
   </View>;
+}
+
+function PlacedBackdrop() {
+  const { ref, onLayout, offset } = useScreenOffset();
+  return <View ref={ref} onLayout={onLayout} pointerEvents="none" style={StyleSheet.absoluteFill}><Backdrop offset={offset} /></View>;
 }

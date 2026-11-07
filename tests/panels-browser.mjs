@@ -31,6 +31,16 @@ try {
     await page.getByRole('button', { name: '偏好设置', exact: true }).click();
     await close.click();
     await close.waitFor({ state: 'hidden' });
+    // Saving a look preset without a name explains itself instead of crashing.
+    await page.getByRole('tab', { name: '工具', exact: true }).click();
+    await page.getByRole('button', { name: /外观与壁纸/ }).click();
+    await page.getByRole('button', { name: '保存当前外观' }).click();
+    await page.getByText('给预设起个名字吧').first().waitFor();
+    await close.click();
+    await close.waitFor({ state: 'hidden' });
+    await page.getByRole('tab', { name: '课表', exact: true }).click();
+    await page.getByRole('button', { name: '打开完整课表' }).click();
+    await page.getByRole('button', { name: '返回概览' }).waitFor();
     await page.getByRole('button', { name: '导入课表', exact: true }).click();
     await page.getByRole('button', { name: '体验教务导入演示' }).click();
     await page.getByRole('button', { name: /^导入 \d+ 条$/ }).click();

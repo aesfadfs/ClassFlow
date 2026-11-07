@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BUILTIN_PRESETS, FONTS, matchesPreset, type Appearance, type LookPreset } from '../domain/appearance';
+import { BLUR_LEVELS, BUILTIN_PRESETS, CARD_LEVELS, DIM_LEVELS, FONTS, PANEL_LEVELS, WALLPAPERS, matchesPreset, type Appearance, type LookPreset, type WallpaperTone } from '../domain/appearance';
+import { pickWallpaper, videoWallpaperSupported } from '../services/images';
 import { Button, Icon, PressSurface, haptic, useUI } from '../ui/primitives';
-import { fontFamily } from '../ui/glass';
+import { AppBackground, fontFamily } from '../ui/glass';
 import { metrics, useTheme } from '../ui/theme';
-import { Field, Sheet } from './Sheets';
+import { Choices, Field, Sheet, Toggle } from './Sheets';
+import { WallpaperFramer } from './WallpaperFramer';
+
+const wallpaperOf = (appearance: Appearance): Partial<Appearance> => ({
+  background: appearance.background, backgroundKind: appearance.backgroundKind, backgroundFrame: appearance.backgroundFrame,
+  backdrop: appearance.backdrop, wallpaperTone: appearance.wallpaperTone, backgroundDim: appearance.backgroundDim,
+});
 
 // Small picture of how a preset looks: a glass card over colour, or a pixel block over tiles.
 function Swatch({ preset }: { preset: LookPreset }) {
@@ -32,12 +39,92 @@ export function LookSheet({ closingRequested = false, appearance, onApply, onApp
 }) {
   const theme = useTheme();
   const ui = useUI();
+  const { width, height } = useWindowDimensions();
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [picking, setPicking] = useState<'image' | 'video' | null>(null);
+  const [framing, setFraming] = useState(false);
+  // The wallpaper as it was when the sheet opened, so any change here can be walked back.
+  const [original] = useState(() => wallpaperOf(appearance));
+  const changed = JSON.stringify(original) !== JSON.stringify(wallpaperOf(appearance));
   const presets = [...BUILTIN_PRESETS, ...appearance.presets];
+  const hasFile = !!appearance.background;
 
-  return <Sheet closingRequested={closingRequested} title="界面风格" subtitle="一键切换预设，也可以保存自己的搭配。" notice={error} onClose={onClose}>
+  async function choose(request: 'image' | 'video') {
+    if (picking) return;
+    setPicking(request); setError('');
+    try {
+      const picked = await pickWallpaper(request);
+      if (!picked) return;
+      haptic('success');
+      onAppearance({ background: picked.uri, backgroundKind: picked.kind, backgroundFrame: null, backdrop: null });
+      // A still photo goes straight to framing; GIFs and videos fill the screen centred.
+      if (picked.kind === 'image') setFraming(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '无法读取这个文件');
+    } finally { setPicking(null); }
+  }
+
+  if (framing && appearance.background) {
+    return <Sheet closingRequested={closingRequested} title="选择显示区域" subtitle="只记录显示哪一块，原图不会被修改。" onClose={() => setFraming(false)}>
+      <WallpaperFramer uri={appearance.background} initial={appearance.backgroundFrame} onCancel={() => setFraming(false)}
+        onDone={frame => { haptic('success'); onAppearance({ backgroundFrame: frame }); setFraming(false); }} />
+    </Sheet>;
+  }
+
+  return <Sheet closingRequested={closingRequested} title="外观与壁纸" subtitle="壁纸、玻璃质感、风格与字体；可以存成自己的预设。" notice={error} onClose={onClose}>
+    <View style={{ gap: 10 }}>
+      <Text accessibilityRole="header" style={[ui.title, { fontSize: 17 }]}>壁纸</Text>
+      <View style={styles.previewRow}>
+        <View testID="background-preview" style={[styles.preview, { borderColor: theme.line, aspectRatio: width / Math.max(1, height) }]}>
+          {/* A video plays once, behind the app; the thumbnail only names it. */}
+          {hasFile && appearance.backgroundKind === 'video' ? <Icon name="file" size={22} color={theme.muted} /> : <AppBackground />}
+        </View>
+        <Text style={[ui.body, { flex: 1 }]}>{hasFile ? { image: '图片壁纸', gif: '动图壁纸', video: '视频壁纸（静音循环）' }[appearance.backgroundKind]
+          : appearance.backdrop ? `渐变壁纸 · ${WALLPAPERS.find(item => item.id === appearance.backdrop)?.name ?? ''}` : '默认背景'}</Text>
+      </View>
+      <View style={styles.choices}>
+        <Button small icon="image" disabled={!!picking} onPress={() => choose('image')}>{picking === 'image' ? '读取中…' : '图片或动图'}</Button>
+        {videoWallpaperSupported && <Button small icon="file" disabled={!!picking} onPress={() => choose('video')}>{picking === 'video' ? '读取中…' : '视频'}</Button>}
+        {hasFile && appearance.backgroundKind !== 'video' && <Button small icon="edit" onPress={() => setFraming(true)}>调整区域</Button>}
+        {(hasFile || !!appearance.backdrop) && <Button small variant="ghost" icon="close" onPress={() => { haptic('light'); onAppearance({ background: null, backgroundFrame: null, backdrop: null }); }}>恢复默认</Button>}
+      </View>
+      <Text style={ui.label}>图片和 GIF 不超过 20 MB，建议竖图约 1080×2400；视频不超过 60 MB，建议 30 秒以内的 MP4，静音循环播放，会更耗电。</Text>
+      <Text style={ui.label}>纯色渐变</Text>
+      <View style={styles.choices}>
+        {WALLPAPERS.map(item => {
+          const selected = !hasFile && appearance.backdrop === item.id;
+          return <PressSurface key={item.id} accessibilityRole="radio" accessibilityLabel={`壁纸${item.name}`} accessibilityState={{ selected }} aria-checked={selected}
+            onPress={() => { haptic(); onAppearance({ backdrop: item.id, background: null, backgroundFrame: null }); }}
+            style={[styles.wallpaper, { borderColor: selected ? theme.blue : theme.line }]}>
+            <LinearGradient colors={item.colors as [string, string, ...string[]]} start={{ x: 0, y: 0 }} end={{ x: 0.35, y: 1 }} style={styles.wallpaperSwatch}>
+              {selected && <Icon name="check" size={14} color={item.dark ? '#f4f6ff' : '#171d2c'} />}
+            </LinearGradient>
+            <Text numberOfLines={1} style={[ui.label, { fontSize: 11, textAlign: 'center' }]}>{item.name}</Text>
+          </PressSurface>;
+        })}
+      </View>
+      {hasFile && <>
+        <Choices<string> label="背景遮罩" value={String(appearance.backgroundDim)} onChange={value => onAppearance({ backgroundDim: Number(value) })}
+          items={DIM_LEVELS.map(level => ({ key: String(level.value), title: `遮罩${level.title}` }))} />
+        <Text style={ui.label}>壁纸上的文字配色</Text>
+        <Choices<WallpaperTone> label="壁纸上的文字配色" value={appearance.wallpaperTone} onChange={wallpaperTone => onAppearance({ wallpaperTone })}
+          items={[{ key: 'system', title: '跟随系统' }, { key: 'light', title: '浅色' }, { key: 'dark', title: '深色' }]} />
+      </>}
+      {!hasFile && !!appearance.backdrop && <Text style={ui.label}>深色渐变自动使用浅色文字，浅色渐变使用深色文字。</Text>}
+      {changed && <Button small variant="ghost" icon="refresh" onPress={() => { haptic('light'); onAppearance(original); }}>撤销壁纸更改</Button>}
+    </View>
+    <View style={{ gap: 10 }}>
+      <Text accessibilityRole="header" style={[ui.title, { fontSize: 17 }]}>玻璃质感</Text>
+      <Choices<string> label="界面透明度" value={String(appearance.glassPanel)} onChange={value => onAppearance({ glassPanel: Number(value) })}
+        items={PANEL_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
+      <Choices<string> label="雾化强度" value={String(appearance.glassBlur)} onChange={value => onAppearance({ glassBlur: Number(value) })}
+        items={BLUR_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
+      <Choices<string> label="课程卡片" value={String(appearance.glassCard)} onChange={value => onAppearance({ glassCard: Number(value) })}
+        items={CARD_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
+      <Toggle label="边缘光晕" detail="玻璃边缘带一圈柔和的光" value={appearance.glow} onChange={glow => onAppearance({ glow })} />
+    </View>
     <View style={{ gap: 10 }}>
       <Text accessibilityRole="header" style={[ui.title, { fontSize: 17 }]}>预设</Text>
       {presets.map((preset, index) => {
@@ -77,7 +164,7 @@ export function LookSheet({ closingRequested = false, appearance, onApply, onApp
           <Text style={[ui.label, { textAlign: 'center' }]}>{font.title}</Text>
         </PressSurface>)}
       </View>
-      <Text style={ui.label}>透明度、雾化、光晕和背景图在「偏好设置 → 外观与操作」中调整，也会一起存进预设。</Text>
+      <Text style={ui.label}>保存预设时，壁纸、透明度、雾化和光晕会一起存进去。</Text>
     </View>
     <View style={{ gap: 10 }}>
       <Text accessibilityRole="header" style={[ui.title, { fontSize: 17 }]}>保存为我的预设</Text>
@@ -103,5 +190,9 @@ const styles = StyleSheet.create({
   pixelCard: { width: 40, height: 26, backgroundColor: '#4f7cf0', borderWidth: 2, borderColor: '#2a2420', boxShadow: '2px 2px 0 rgba(0,0,0,0.3)' },
   pixelBand: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 8, backgroundColor: '#2a47ad' },
   choices: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  preview: { width: 64, borderRadius: 10, borderWidth: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  wallpaper: { width: 58, borderWidth: 1.5, borderRadius: metrics.radius.md, padding: 4, gap: 3 },
+  wallpaperSwatch: { height: 38, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   fontChoice: { flex: 1, minWidth: 90, borderWidth: 1.5, borderRadius: metrics.radius.md, paddingVertical: 10, gap: 4 },
 });

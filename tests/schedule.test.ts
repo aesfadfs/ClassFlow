@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createEntry, demoState, emptyState, restoreScheduleState, findConflicts, freeWindows, isScheduleState, layoutDay, occursInWeek, parseDate, parseTime, weekDates, weekNumber, dateKey, validateEntry, dayOfWeek } from '../src/domain/schedule.ts';
+import { compactLocation, createEntry, demoState, emptyState, restoreScheduleState, findConflicts, freeWindows, isScheduleState, layoutDay, occursInWeek, parseDate, parseTime, weekDates, weekNumber, dateKey, validateEntry, dayOfWeek } from '../src/domain/schedule.ts';
 import { analyzeImport, CSV_TEMPLATE, parseCSV, parseImport } from '../src/domain/import.ts';
 
 test('fresh installs start empty and legacy examples do not return on upgrade', () => {
@@ -257,7 +257,7 @@ test('class reminders fire before each session and skip back-to-back ones', asyn
   // A week ahead at most, and the next Thursday repeats.
   assert.ok(plan.every(item => item.fireAt.getTime() - now.getTime() < 9 * 864e5));
   assert.ok(plan.some(item => item.id === 'a@2026-11-12'));
-  assert.deepEqual(restoreReminders({ enabled: true, lead: 7, gap: 45, plans: 'x', sound: 'chime', vibration: 'loud' }), { enabled: true, lead: 10, gap: 45, plans: false, sound: 'chime', vibration: 'long' });
+  assert.deepEqual(restoreReminders({ enabled: true, lead: 7, gap: 45, plans: 'x', sound: 'chime', vibration: 'loud' }), { enabled: true, lead: 10, gap: 45, plans: false, sound: 'chime', vibration: 'long', alarm: false });
   const { vibrationPattern } = await import('../src/domain/reminders.ts');
   assert.equal(vibrationPattern('none'), null);
   const long = vibrationPattern('long')!;
@@ -330,4 +330,12 @@ test('look presets: built-in glass and pixel, saved custom looks, safe restore',
   const restored = restoreAppearance(JSON.stringify({ ...mine, presets: [...mine.presets, { id: 'evil', name: 'x' }, { id: 'custom:b', name: '暗色', uiStyle: 'neon', font: 'comic' }] }));
   assert.deepEqual(restored.presets.map(item => [item.id, item.uiStyle, item.font]), [['custom:a1', 'pixel', 'serif'], ['custom:b', 'glass', 'system']]);
   assert.equal(restoreAppearance(JSON.stringify({ uiStyle: 'pixel', font: 'mono' })).uiStyle, 'pixel');
+});
+
+test('week cells drop the campus prefix but keep the room and unknown formats', () => {
+  assert.equal(compactLocation('桂林洋[桂]地理101'), '地理101');
+  assert.equal(compactLocation('桂林洋校区 · 地理101'), '地理101');
+  assert.equal(compactLocation('信息楼 · 306'), '信息楼 · 306');
+  assert.equal(compactLocation('桂林洋校区'), '桂林洋校区');
+  assert.equal(compactLocation('[桂]'), '[桂]');
 });

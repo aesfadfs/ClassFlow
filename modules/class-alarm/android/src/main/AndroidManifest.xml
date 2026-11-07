@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Ringing runs in a short foreground service started by the exact alarm itself. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+  <uses-permission android:name="android.permission.WAKE_LOCK"/>
+  <!-- Alarms are wiped by a reboot; the stored next-24-hour list is set again afterwards. -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+  <application>
+    <receiver android:name="expo.modules.classalarm.AlarmReceiver" android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+        <action android:name="android.intent.action.TIME_SET"/>
+        <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+      </intent-filter>
+    </receiver>
+    <service android:name="expo.modules.classalarm.AlarmService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+  </application>
+</manifest>

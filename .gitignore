@@ -24,3 +24,4 @@ credentials.json
 .agents/
 .DS_Store
 Thumbs.db
+builds/

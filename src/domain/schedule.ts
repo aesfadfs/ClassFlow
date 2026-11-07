@@ -236,6 +236,26 @@ export function demoState(): ScheduleState {
   };
 }
 
+/**
+ * Week-view cells are ~43dp wide, so the campus part goes and the room survives.
+ * 正方 data looks like `桂林洋[桂]地理101` (campus, bracketed campus marker, room) or `桂林洋校区 地理101`.
+ * Display only: the stored location is never changed.
+ */
+export function compactLocation(value: string): string {
+  const text = value.trim();
+  const marker = /^[^[]*?\[[^\]]{1,6}\]\s*/.exec(text);
+  if (marker && marker[0].length < text.length) {
+    const rest = text.slice(marker[0].length).trim();
+    if (rest) return rest;
+  }
+  const campus = /^[一-龥]{2,10}校区\s*[·\-,，]?\s*/.exec(text);
+  if (campus && campus[0].length < text.length) {
+    const rest = text.slice(campus[0].length).trim();
+    if (rest) return rest;
+  }
+  return text;
+}
+
 export function isScheduleState(value: unknown): value is ScheduleState {
   if (!value || typeof value !== 'object') return false;
   const state = value as ScheduleState;

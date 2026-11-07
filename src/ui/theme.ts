@@ -1,3 +1,4 @@
+import { createContext, useContext } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 
 const light = {
@@ -19,7 +20,14 @@ const dark: typeof light = {
 };
 
 export type Theme = typeof light;
-export function useTheme(): Theme { return useColorScheme() === 'dark' ? dark : light; }
+/** A wallpaper may ask for one palette (a dark colour wallpaper needs light text); null follows the system. */
+export const SchemeContext = createContext<'light' | 'dark' | null>(null);
+export function useTheme(override?: 'light' | 'dark' | null): Theme {
+  const system = useColorScheme();
+  const forced = useContext(SchemeContext);
+  const scheme = override === undefined ? forced ?? system : override ?? system;
+  return scheme === 'dark' ? dark : light;
+}
 
 export const metrics = {
   space: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 },
@@ -35,7 +43,8 @@ export const springs = {
   snap: { mass: 0.65, stiffness: 340, damping: 30, overshootClamping: true, energyThreshold: 0.001 },
   sheet: { mass: 0.9, stiffness: 310, damping: 33 },
   // Paging and card-stack snapping: carry the release velocity, settle without wobble.
-  page: { mass: 0.8, stiffness: 240, damping: 30, overshootClamping: true },
+  // Settles in roughly 350ms; the older 0.8/240/30 took ~600ms and read as lag on 60Hz panels.
+  page: { mass: 0.7, stiffness: 330, damping: 32, overshootClamping: true },
   card: { mass: 0.7, stiffness: 260, damping: 26 },
   // Soft "jelly" return after a tap on the up-next card: a small, visible overshoot.
   squeeze: { mass: 0.5, stiffness: 320, damping: 22 },

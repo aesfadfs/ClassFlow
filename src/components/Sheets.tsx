@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { BlurView } from 'expo-blur';
 import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, DAYS, findConflicts, formatTime, parseDate, parseTime, selectedWeeks, validateEntry, weekRule, dayOfWeek, type Entry, type Preferences } from '../domain/schedule';
 import { CSV_TEMPLATE, analyzeImport, parseDemoImport, parseImport, type ImportResult } from '../domain/import';
 import { exportText, pickScheduleFile } from '../services/files';
-import { Button, Icon, PressSurface, Reveal, haptic, useAccessibility, useUI, type IconName } from '../ui/primitives';
+import { BlurTargetContext, Button, Icon, PressSurface, Reveal, haptic, useAccessibility, useUI, type IconName } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -12,12 +13,15 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { hainnu } from '../features/schools';
 import { version as APP_VERSION } from '../../package.json';
 import { GAP_LEVELS, LEAD_LEVELS, SOUNDS, VIBRATIONS } from '../domain/reminders';
+import { alarmsExact, alarmsSupported, openAlarmAccessSettings } from '../services/notifications';
 import { BLUR_LEVELS, CARD_LEVELS, DIM_LEVELS, PANEL_LEVELS, type Appearance, type CardImageScope } from '../domain/appearance';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SchoolBrowser } from './SchoolBrowser';
 import { normalizeZhengfang, requiredSectionTimes, resolveSchoolPeriodTimes, type SectionTime, type TimetableCapture } from '../features/zhengfang';
 
 const panelSpring = { ...springs.sheet, energyThreshold: 0.00001 };
+/** Phones draw sheets inside the app window (real frosted glass); the web keeps a Modal. */
+export const INLINE_SHEETS = Platform.OS !== 'web';
 
 export function Sheet({ closingRequested = false, title, subtitle, notice, onClose, children, footer, stableHeight }: { closingRequested?: boolean; title: string; subtitle?: string; notice?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode | ((close: () => void) => React.ReactNode); stableHeight?: boolean }) {
   const { width, height, fontScale } = useWindowDimensions();
@@ -29,7 +33,8 @@ export function Sheet({ closingRequested = false, title, subtitle, notice, onClo
   const theme = useTheme();
   const ui = useUI();
   const styles = useSheetStyles();
-  const { reduceMotion } = useAccessibility();
+  const { reduceMotion, reduceTransparency } = useAccessibility();
+  const blurTarget = useContext(BlurTargetContext);
   const progress = useSharedValue(reduceMotion ? 1 : 0);
   const panelHeight = useSharedValue(height);
   const origin = useSharedValue(0);
@@ -97,9 +102,7 @@ export function Sheet({ closingRequested = false, title, subtitle, notice, onClo
   });
   const backdropStyle = useAnimatedStyle(() => ({ opacity: Math.max(0, Math.min(1, progress.get())) }));
 
-  return <Modal visible transparent statusBarTranslucent navigationBarTranslucent animationType="none" onRequestClose={close}
-    accessibilityLabel={Platform.OS === 'web' ? title : undefined}>
-    <GestureHandlerRootView style={{ flex: 1 }}>
+  const body = <GestureHandlerRootView style={{ flex: 1 }}>
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.overlay, {
       justifyContent: mobile ? 'flex-end' : 'center',
       paddingTop: insets.top + (mobile ? 8 : 16),
@@ -113,8 +116,13 @@ export function Sheet({ closingRequested = false, title, subtitle, notice, onClo
       <Animated.View
         accessibilityViewIsModal
         onLayout={event => panelHeight.set(Math.max(1, event.nativeEvent.layout.height))}
-        style={[styles.sheet, motionStyle, mobile && styles.bottomSheet, stableHeight && styles.workflowSheet]}
+        style={[styles.sheet, INLINE_SHEETS && !reduceTransparency && styles.frostedSheet, motionStyle, mobile && styles.bottomSheet, stableHeight && styles.workflowSheet]}
       >
+        {INLINE_SHEETS && !reduceTransparency && <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <BlurView intensity={Platform.OS === 'android' ? 55 : 40} tint={theme.dark ? 'dark' : 'light'}
+            blurMethod="dimezisBlurViewSdk31Plus" blurTarget={blurTarget ?? undefined} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.dark ? 'rgba(20,22,34,0.55)' : 'rgba(250,251,255,0.62)' }]} />
+        </View>}
         <GestureDetector gesture={pan}><View collapsable={false}>
           {mobile && <View style={styles.handle} />}
           <View style={[styles.sheetHeader, { paddingHorizontal: padding }]}>
@@ -129,14 +137,19 @@ export function Sheet({ closingRequested = false, title, subtitle, notice, onClo
           {!footer && !!notice && <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{notice}</Text>}
           {children}
         </ScrollView>
-        {footer && <View style={[styles.footer, { paddingHorizontal: padding, paddingBottom: bottomPadding }]}>
+        {footer && <View style={[styles.footer, INLINE_SHEETS && !reduceTransparency && styles.frostedFooter, { paddingHorizontal: padding, paddingBottom: bottomPadding }]}>
           {!!notice && <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{notice}</Text>}
           <View style={styles.footerRow}>{typeof footer === 'function' ? footer(close) : footer}</View>
         </View>}
       </Animated.View>
     </KeyboardAvoidingView>
-    </GestureHandlerRootView>
-  </Modal>;
+    </GestureHandlerRootView>;
+  // On phones the sheet is drawn inside the app window, not a separate Modal window: only then can its
+  // BlurView frost the live app behind it. The app's back handler closes it (see App.tsx). The web keeps
+  // the Modal for its focus trap and Escape handling.
+  if (INLINE_SHEETS) return <View style={styles.inlineLayer}>{body}</View>;
+  return <Modal visible transparent statusBarTranslucent navigationBarTranslucent animationType="none" onRequestClose={close}
+    accessibilityLabel={Platform.OS === 'web' ? title : undefined}>{body}</Modal>;
 }
 
 export function Field({ label, value, onChange, placeholder, multiline, numeric }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; multiline?: boolean; numeric?: boolean }) {
@@ -225,7 +238,7 @@ function WeekPicker({ weeks, picked, onChange }: { weeks: number; picked: Set<nu
   </View>;
 }
 
-function Choices<T extends string>({ label, items, value, onChange }: { label: string; items: { key: T; title: string; icon?: IconName }[]; value: T; onChange: (value: T) => void }) {
+export function Choices<T extends string>({ label, items, value, onChange }: { label: string; items: { key: T; title: string; icon?: IconName }[]; value: T; onChange: (value: T) => void }) {
   const styles = useSheetStyles();
   const theme = useTheme();
   return <View style={styles.segment} accessibilityLabel={label}>
@@ -598,9 +611,11 @@ function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (c
   </PressSurface>;
 }
 
-export function SettingsSheet({ closingRequested = false, preferences, onSave, onClose, onExport, onClearDemo, demo, appearance, onAppearance, onPickBackground, onEnableReminders, onTestReminder }: {
+export function SettingsSheet({ closingRequested = false, preferences, onSave, onClose, onExport, onRestoreLocal, onClearDemo, demo, appearance, onAppearance, onEnableReminders, onTestReminder }: {
   closingRequested?: boolean; preferences: Preferences; onSave: (preferences: Preferences) => void; onClose: () => void; onExport: () => Promise<void>; onClearDemo: () => void; demo: boolean;
-  appearance?: Appearance; onAppearance?: (patch: Partial<Appearance>) => void; onPickBackground?: () => Promise<string | null>;
+  /** Puts back the newest non-empty timetable kept on this device. */
+  onRestoreLocal?: () => Promise<void>;
+  appearance?: Appearance; onAppearance?: (patch: Partial<Appearance>) => void;
   /** Asks for notification permission; resolves to whether reminders can be turned on. */
   onEnableReminders?: () => Promise<boolean>;
   /** Sends a sample reminder in a few seconds with the current sound and vibration. */
@@ -652,28 +667,8 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
     {appearance && onAppearance && <>
       <View style={styles.divider} />
       <View style={styles.group}>
-        <Text accessibilityRole="header" style={styles.itemTitle}>外观与操作</Text>
-        <View style={styles.cardImageRow}>
-          <View testID="background-preview" style={[styles.bgThumb, { backgroundColor: theme.bg }]}>
-            {appearance.background ? <>
-              <Image source={{ uri: appearance.background }} resizeMode="cover" style={StyleSheet.absoluteFill} />
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.bg, opacity: appearance.backgroundDim }]} />
-            </> : <Icon name="image" size={24} color={theme.muted} />}
-          </View>
-          <View style={{ flex: 1, gap: 8 }}>
-            <Button small icon="image" onPress={async () => { const uri = await onPickBackground?.(); if (uri) { haptic('success'); onAppearance({ background: uri }); } }}>{appearance.background ? '更换背景图片' : '选择背景图片'}</Button>
-            {!!appearance.background && <Button small variant="ghost" icon="close" onPress={() => { haptic('light'); onAppearance({ background: null }); }}>恢复默认背景</Button>}
-          </View>
-        </View>
-        {!!appearance.background && <Choices<string> label="背景遮罩" value={String(appearance.backgroundDim)} onChange={value => onAppearance({ backgroundDim: Number(value) })}
-          items={DIM_LEVELS.map(level => ({ key: String(level.value), title: `遮罩${level.title}` }))} />}
-        <Choices<string> label="界面透明度" value={String(appearance.glassPanel)} onChange={value => onAppearance({ glassPanel: Number(value) })}
-          items={PANEL_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
-        <Choices<string> label="雾化强度" value={String(appearance.glassBlur)} onChange={value => onAppearance({ glassBlur: Number(value) })}
-          items={BLUR_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
-        <Choices<string> label="课程卡片" value={String(appearance.glassCard)} onChange={value => onAppearance({ glassCard: Number(value) })}
-          items={CARD_LEVELS.map(level => ({ key: String(level.value), title: level.title }))} />
-        <Toggle label="边缘光晕" detail="玻璃边缘带一圈柔和的光" value={appearance.glow} onChange={glow => onAppearance({ glow })} />
+        <Text accessibilityRole="header" style={styles.itemTitle}>操作</Text>
+        <Text style={styles.hint}>壁纸、透明度、雾化和光晕在「工具箱 → 外观与壁纸」中调整。</Text>
         <Toggle label="启动问候" detail="打开时先显示一句问候，再揭开课表；轻点可跳过" value={appearance.greeting} onChange={greeting => onAppearance({ greeting })} />
         <Text style={styles.hint}>完整课表「节次」排列的作息</Text>
         <Choices<string> label="节次作息" value={appearance.periodPreset} onChange={value => onAppearance({ periodPreset: value === 'guilinyang' ? 'guilinyang' : 'auto' })}
@@ -698,6 +693,14 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
           <Choices<string> label="连堂不提醒的间隔" value={String(appearance.reminders.gap)} onChange={value => onAppearance({ reminders: { ...appearance.reminders, gap: Number(value) } })}
             items={GAP_LEVELS.map(minutes => ({ key: String(minutes), title: minutes ? `${minutes} 分钟` : '都提醒' }))} />
           <Toggle label="个人安排也提醒" detail="默认只提醒课程" value={appearance.reminders.plans} onChange={plans => onAppearance({ reminders: { ...appearance.reminders, plans } })} />
+          {alarmsSupported() && <>
+            <Toggle label="铃声闹钟" detail="24 小时内的提醒改用闹钟响铃：走闹钟音量，静音或勿扰时也会响，响 1 分钟或点「停止」结束，响过即删。关闭后自动删除课序创建的闹钟，不会动你自己设的闹钟。" value={appearance.reminders.alarm}
+              onChange={alarm => onAppearance({ reminders: { ...appearance.reminders, alarm } })} />
+            {appearance.reminders.alarm && !alarmsExact() && <>
+              <Text style={[styles.hint, { color: theme.warning }]}>系统没有授予「闹钟和提醒」权限，闹钟可能晚几分钟才响。</Text>
+              <Button small icon="settings" onPress={openAlarmAccessSettings}>去开启闹钟和提醒权限</Button>
+            </>}
+          </>}
           <Text style={styles.hint}>提醒声音（内置铃声约 5–8 秒）</Text>
           <Choices<string> label="提醒声音" value={appearance.reminders.sound} onChange={value => onAppearance({ reminders: { ...appearance.reminders, sound: SOUNDS.find(item => item.key === value)!.key } })}
             items={SOUNDS.map(item => ({ key: item.key, title: item.title }))} />
@@ -716,6 +719,10 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
       <Text style={ui.body}>数据保存在当前设备。换设备时，可用导出的 JSON 文件恢复课表。</Text>
       <Button icon="import" disabled={exporting} onPress={backup}>{exporting ? '正在准备备份…' : '导出完整备份'}</Button>
       {backupReady && <Text accessibilityLiveRegion="polite" style={styles.success}>备份文件已准备好</Text>}
+      {onRestoreLocal && <>
+        <Text style={ui.label}>每次保存时，最近一份非空课表会自动留在本机；误清空或数据损坏时可以从这里找回，恢复后可撤销。</Text>
+        <Button icon="clock" onPress={() => void onRestoreLocal()}>从自动备份恢复</Button>
+      </>}
       {demo && <Button variant="danger" icon="trash" onPress={onClearDemo}>清空示例课表</Button>}
     </View>
     <Text testID="about-publisher" style={[ui.label, { textAlign: 'center', paddingVertical: 8 }]}>课序 ClassFlow {APP_VERSION} · Inno-Mon Studio 出品</Text>
@@ -726,6 +733,9 @@ function useSheetStyles() {
   const theme = useTheme();
   return useMemo(() => StyleSheet.create({
     overlay: { flex: 1, alignItems: 'center' },
+    inlineLayer: { ...StyleSheet.absoluteFill, zIndex: 80, elevation: 80 },
+    frostedSheet: { backgroundColor: 'transparent' },
+    frostedFooter: { backgroundColor: 'transparent' },
     sheet: {
       width: '100%', maxWidth: 560, maxHeight: '100%', flexShrink: 1, backgroundColor: theme.surface,
       borderRadius: metrics.radius.xl, borderWidth: 1, borderColor: theme.line, overflow: 'hidden',
