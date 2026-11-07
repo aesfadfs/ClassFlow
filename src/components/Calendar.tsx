@@ -8,6 +8,7 @@ import { COLORS, DAYS, compactLocation, dateKey, entriesForWeek, formatTime, lay
 import { minuteToY, periodRows, placeRows, type PeriodTime } from '../domain/periods';
 import { GlassSheen, haptic, Icon, PRESS_DELAY, Reveal, useAccessibility } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
+import { useGlass, usePixelStyles } from '../ui/glass';
 
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 const HOUR_HEIGHT = 64;
@@ -24,6 +25,7 @@ type DateSelectorProps = { dates: Date[]; day: number; now: Date; onDay: (day: n
 function DateButton({ date, index, selected, today, short, onPress }: {
   date: Date; index: number; selected: boolean; today: boolean; short?: boolean; onPress: () => void;
 }) {
+  const styles = usePixelStyles(baseStyles);
   const theme = useTheme();
   return <Pressable
     accessibilityRole="button"
@@ -42,6 +44,7 @@ function DateButton({ date, index, selected, today, short, onPress }: {
 }
 
 export function DayStrip({ dates, day, now, onDay }: DateSelectorProps) {
+  const styles = usePixelStyles(baseStyles);
   const theme = useTheme();
   const { reduceMotion } = useAccessibility();
   const [width, setWidth] = useState(0);
@@ -55,13 +58,17 @@ export function DayStrip({ dates, day, now, onDay }: DateSelectorProps) {
 
   const indicator = useAnimatedStyle(() => ({ transform: [{ translateX: selectedDay.get() * cellWidth }] }));
 
-  return <View style={[styles.dayStrip, { backgroundColor: theme.soft }]}>
+  // Same material as the panels: a translucent tray on glass, solid blocks in the pixel style.
+  const pixel = useGlass().style === 'pixel';
+  const tray = pixel ? theme.soft : theme.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.38)';
+  const chip = pixel ? theme.surface : theme.dark ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.72)';
+  return <View style={[styles.dayStrip, { backgroundColor: tray }, pixel && styles.pixelStrip]}>
     <View style={styles.dayStripRow} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
       <Animated.View
         pointerEvents="none"
         style={[styles.stripIndicator, { width: cellWidth, opacity: width ? 1 : 0 }, indicator]}
       >
-        <View style={[styles.stripSelection, { backgroundColor: theme.surface, borderColor: theme.accentLine }]} />
+        <View style={[styles.stripSelection, { backgroundColor: chip, borderColor: pixel ? theme.ink : theme.accentLine }, pixel && styles.pixelChip]} />
       </Animated.View>
       {dates.map((date, index) => <DateButton
         key={index}
@@ -80,6 +87,7 @@ function CourseBlock({ entry, height, singleDay, lanes, style, onPress, columnWi
   entry: Entry; height: number; singleDay: boolean; lanes: number; dragEnabled: boolean; style: StyleProp<ViewStyle>; onPress: () => void;
   columnWidth: number; hourHeight: number; peers: Entry[]; onMove: (entry: Entry) => void; onDrag: (placement: Placement | null) => void;
 }) {
+  const styles = usePixelStyles(baseStyles);
   const theme = useTheme();
   const { reduceMotion } = useAccessibility();
   const scale = useSharedValue(1);
@@ -222,6 +230,7 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
   onDay: (day: number) => void; onEdit: (entry: Entry) => void; onEmpty: (day: number, start: number) => void;
   onMove: (entry: Entry) => void;
 }) {
+  const styles = usePixelStyles(baseStyles);
   const theme = useTheme();
   const { fontScale } = useWindowDimensions();
   const [canvasWidth, setCanvasWidth] = useState(0);
@@ -354,7 +363,7 @@ export function Calendar({ entries, week, dates, day, mobile, singleDay, dragEna
   </View>;
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   todayGlow: { position: 'absolute', top: 0, bottom: 0, left: 1, right: 1, borderWidth: 1, borderRadius: metrics.radius.md },
   canvasHint: { fontSize: 11, paddingLeft: 16, paddingTop: 5, paddingBottom: 7 },
   resizeHandle: { position: 'absolute', bottom: 0, left: '20%', right: '20%', height: 14, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 3 },
@@ -367,6 +376,8 @@ const styles = StyleSheet.create({
   dayStripRow: { flexDirection: 'row' },
   stripIndicator: { position: 'absolute', left: 0, top: 0, bottom: 0 },
   stripSelection: { flex: 1, borderRadius: metrics.radius.md, borderWidth: StyleSheet.hairlineWidth },
+  pixelStrip: { borderRadius: 3 },
+  pixelChip: { borderRadius: 2, borderWidth: 2, boxShadow: '2px 2px 0 rgba(0,0,0,0.25)' },
   dateButton: { flex: 1, minHeight: 58, alignItems: 'center', justifyContent: 'center', gap: 3 },
   dayLabel: { fontSize: metrics.type.caption, fontWeight: '600' },
   dateNumber: { fontSize: 18, fontWeight: '600', fontVariant: ['tabular-nums'] },

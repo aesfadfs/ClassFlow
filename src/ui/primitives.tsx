@@ -132,7 +132,8 @@ export function LiquidGlass({ children, style, radius = metrics.radius.full, int
   const rim = theme.dark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.85)';
   return <View style={[shadow, style]}>
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: 'hidden' }]}>
-      {!reduceTransparency && !accent && <BlurView intensity={Platform.OS === 'android' ? 70 : 38} tint={theme.dark ? 'dark' : 'light'}
+      {/* The accent button is tinted glass too: blurred backdrop under a translucent colour. */}
+      {!reduceTransparency && <BlurView intensity={Platform.OS === 'android' ? 70 : 38} tint={theme.dark ? 'dark' : 'light'}
         blurMethod="dimezisBlurViewSdk31Plus" blurTarget={blurTarget ?? undefined} style={StyleSheet.absoluteFill} />}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} />
       <LinearGradient colors={theme.dark ? ['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'rgba(255,255,255,0.06)'] : ['rgba(255,255,255,0.75)', 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0.32)']}

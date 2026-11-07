@@ -7,6 +7,7 @@ import { CSV_TEMPLATE, analyzeImport, parseDemoImport, parseImport, type ImportR
 import { exportText, pickScheduleFile } from '../services/files';
 import { BlurTargetContext, Button, Icon, PressSurface, Reveal, haptic, useAccessibility, useUI, type IconName } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
+import { PIXEL, frost, pixelShadow, pixelize, useGlass } from '../ui/glass';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -731,7 +732,9 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
 
 function useSheetStyles() {
   const theme = useTheme();
-  return useMemo(() => StyleSheet.create({
+  const look = useGlass();
+  const pixel = look.style === 'pixel';
+  return useMemo(() => pixelSheet(pixel, theme, look, StyleSheet.create({
     overlay: { flex: 1, alignItems: 'center' },
     inlineLayer: { ...StyleSheet.absoluteFill, zIndex: 80, elevation: 80 },
     frostedSheet: { backgroundColor: 'transparent' },
@@ -809,5 +812,17 @@ function useSheetStyles() {
     cardThumb: { width: 128, height: 81, borderRadius: metrics.radius.md, overflow: 'hidden', justifyContent: 'flex-end', padding: 8, backgroundColor: theme.soft },
     cardThumbText: { color: '#ffffff', fontSize: 12, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.45)', textShadowRadius: 4 },
     bgThumb: { width: 72, height: 110, borderRadius: metrics.radius.md, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.line },
-  }), [theme]);
+  })), [theme, pixel, look]);
+}
+
+// Pixel style for every sheet: squared corners, a solid panel with a dark outline and hard shadow.
+function pixelSheet<T extends Record<string, unknown>>(pixel: boolean, theme: ReturnType<typeof useTheme>, look: ReturnType<typeof useGlass>, styles: T): T {
+  if (!pixel) return styles;
+  const block = frost(theme, false, look);
+  const out = pixelize(styles) as Record<string, Record<string, unknown>>;
+  out.sheet = { ...out.sheet, backgroundColor: block.fill, borderWidth: PIXEL.border, borderColor: block.rim, boxShadow: pixelShadow(theme, 6) };
+  out.frostedSheet = {};
+  out.frostedFooter = {};
+  out.footer = { ...out.footer, backgroundColor: block.fill, borderColor: block.rim, borderTopWidth: 2 };
+  return out as T;
 }

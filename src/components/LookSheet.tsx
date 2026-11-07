@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BLUR_LEVELS, BUILTIN_PRESETS, CARD_LEVELS, DIM_LEVELS, FONTS, PANEL_LEVELS, WALLPAPERS, matchesPreset, type Appearance, type LookPreset, type WallpaperTone } from '../domain/appearance';
 import { pickWallpaper, videoWallpaperSupported } from '../services/images';
 import { Button, Icon, PressSurface, haptic, useUI } from '../ui/primitives';
-import { AppBackground, fontFamily } from '../ui/glass';
+import { AppBackground, fontFamily, usePixelStyles } from '../ui/glass';
 import { metrics, useTheme } from '../ui/theme';
 import { Choices, Field, Sheet, Toggle } from './Sheets';
 import { WallpaperFramer } from './WallpaperFramer';
@@ -16,6 +16,8 @@ const wallpaperOf = (appearance: Appearance): Partial<Appearance> => ({
 
 // Small picture of how a preset looks: a glass card over colour, or a pixel block over tiles.
 function Swatch({ preset }: { preset: LookPreset }) {
+  // The preview always shows the preset's own shape, whatever style is active now.
+  const styles = baseStyles;
   if (preset.uiStyle === 'pixel') {
     return <View style={[styles.swatch, { backgroundColor: '#d2ccbe', borderRadius: 3 }]}>
       <View style={styles.pixelTiles}>{[0, 1, 2, 3, 4, 5].map(index => <View key={index} style={[styles.pixelTile, { backgroundColor: index % 3 ? '#d9d4c7' : '#c9c2b2' }]} />)}</View>
@@ -37,6 +39,7 @@ export function LookSheet({ closingRequested = false, appearance, onApply, onApp
   onApply: (preset: LookPreset) => void; onAppearance: (patch: Partial<Appearance>) => void;
   onSavePreset: (name: string) => string | null; onDeletePreset: (id: string) => void; onClose: () => void;
 }) {
+  const styles = usePixelStyles(baseStyles);
   const theme = useTheme();
   const ui = useUI();
   const { width, height } = useWindowDimensions();
@@ -178,7 +181,7 @@ export function LookSheet({ closingRequested = false, appearance, onApply, onApp
   </Sheet>;
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   preset: { flex: 1, borderWidth: 1.5, borderRadius: metrics.radius.md },
   presetInner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },

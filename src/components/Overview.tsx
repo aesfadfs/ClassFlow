@@ -7,7 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { describeOccurrence, formatTime, type Entry, type Occurrence } from '../domain/schedule';
 import { Button, haptic, Icon, PRESS_DELAY, useAccessibility, useTapGuard, useUI } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
-import { Backdrop, fontFamily, useGlass, useScreenOffset } from '../ui/glass';
+import { Backdrop, GlassFill, fontFamily, useGlass, useScreenOffset } from '../ui/glass';
 import { STACK, anchoredIndex, settleIndex, stackPose } from '../ui/stackMath';
 
 const RATIO = 1.45;       // close to bank card proportions, a little taller for text
@@ -144,7 +144,9 @@ export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen,
   }, [count > 0, position, step]);
 
   if (!count) {
-    return <View style={[styles.empty, { borderColor: theme.line, backgroundColor: theme.soft }]}>
+    // Empty state: a transparent glass panel like the rest of the home page.
+    return <View style={[ui.card, styles.empty]}>
+      <GlassFill radius={metrics.radius.lg} />
       <Icon name="coffee" size={30} color={theme.muted} />
       <Text style={[ui.title, { fontSize: 17 }]}>接下来没有课程或待办</Text>
       <Text style={[ui.label, { textAlign: 'center' }]}>导入课表，或先手动添加一项安排</Text>
@@ -329,6 +331,6 @@ const styles = StyleSheet.create({
   dots: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1, overflow: 'hidden' },
   dot: { width: 6, height: 6, borderRadius: 3 },
   dotActive: { width: 16 },
-  empty: { flex: 1, minHeight: 140, borderRadius: metrics.radius.lg, borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 },
+  empty: { flex: 1, minHeight: 140, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 },
   emptyActions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 6 },
 });

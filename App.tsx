@@ -20,7 +20,7 @@ import { hainnu } from './src/features/schools';
 import { APPEARANCE_KEY, WALLPAPERS, wallpaperScheme, applyPreset, deletePreset, savePreset, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
 import { AccessibilityProvider, BlurTargetContext, Button, Icon, LiquidGlass, PressSurface, Reveal, haptic, setHapticsEnabled, useAccessibility, useUI, type IconName } from './src/ui/primitives';
 import { SchemeContext, metrics, springs, useTheme } from './src/ui/theme';
-import { AppBackground, BackgroundContext, GlassContext, GlassFill, fontFamily, frost, useGlass } from './src/ui/glass';
+import { AppBackground, BackgroundContext, GlassContext, GlassFill, fontFamily, pixelize, useGlass, usePixelStyles } from './src/ui/glass';
 import { GreetingCurtain } from './src/components/Greeting';
 import { LookSheet } from './src/components/LookSheet';
 import { GUIDE_STEPS, ONBOARDING_KEY, Onboarding } from './src/components/Onboarding';
@@ -353,6 +353,10 @@ function ClassFlow() {
   const glassLook = useMemo(() => ({ panel: appearance.glassPanel, blur: appearance.glassBlur, card: appearance.glassCard, glow: appearance.glow, style: appearance.uiStyle, font: appearance.font }),
     [appearance.glassPanel, appearance.glassBlur, appearance.glassCard, appearance.glow, appearance.uiStyle, appearance.font]);
   const pixel = appearance.uiStyle === 'pixel';
+  // This component sits outside GlassContext, so it squares its own styles from the setting.
+  const styles = useMemo(() => pixel ? pixelize(baseStyles) : baseStyles, [pixel]);
+  // Segmented controls sit on glass: a light translucent tray instead of a solid grey one.
+  const tray = pixel ? theme.soft : theme.dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.38)';
   const face = fontFamily(appearance.font);
   const ui = useUI(glassLook, scheme);
   // Keep a week of class reminders scheduled: after any timetable or setting change, and whenever the app comes back.
@@ -381,7 +385,7 @@ function ClassFlow() {
   const upcoming = useMemo(() => upcomingOccurrences(state.entries, state.preferences, now, { once: true }), [state.entries, state.preferences, now]);
   // 「第 10 周」 carries its date range underneath, so you know where you are at a glance.
   const weekRange = `${dates[0].getMonth() + 1}/${dates[0].getDate()}–${dates[6].getMonth() + 1}/${dates[6].getDate()}`;
-  const weekControl = <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
+  const weekControl = <View style={[ui.row, styles.controlGroup, { backgroundColor: tray }]}>
     <Button small icon="left" label="上一周" variant="ghost" disabled={week <= 1} onPress={() => { haptic(); setWeek(week - 1); }} />
     <View accessible accessibilityLiveRegion="polite" accessibilityLabel={`第 ${week} 周，${weekRange.replace('–', ' 到 ')}`} style={styles.weekLabel}>
       <Text style={[styles.weekNumber, { color: theme.ink }]}>第 {week} 周</Text>
@@ -486,14 +490,15 @@ function ClassFlow() {
             {weekControl}
             <Button small variant="ghost" onPress={goToday}>本周</Button>
           </View>
-          <View style={[ui.card, styles.calendar, { backgroundColor: frost(theme, true, glassLook).fill }]}>
-            <GlassFill radius={metrics.radius.lg} strong />
+          {/* Same transparent glass as the other panels; the course blocks carry their own colour. */}
+          <View style={[ui.card, styles.calendar]}>
+            <GlassFill radius={metrics.radius.lg} />
             <View style={styles.detailToolbar}>
-              <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
+              <View style={[ui.row, styles.controlGroup, { backgroundColor: tray }]}>
                 <Button small variant="ghost" label="按周查看" selected={view === 'week'} onPress={() => setView('week')}>{narrowToolbar ? '周' : '周视图'}</Button>
                 <Button small variant="ghost" label="按日查看" selected={view === 'day'} onPress={() => setView('day')}>{narrowToolbar ? '日' : '日视图'}</Button>
               </View>
-              <View style={[ui.row, styles.controlGroup, { backgroundColor: theme.soft }]}>
+              <View style={[ui.row, styles.controlGroup, { backgroundColor: tray }]}>
                 <Button small variant="ghost" label="按时间轴排列" selected={appearance.calendarLayout === 'timeline'} onPress={() => setCalendarLayout('timeline')}>时间轴</Button>
                 <Button small variant="ghost" label="按节次对齐" selected={appearance.calendarLayout === 'periods'} onPress={() => setCalendarLayout('periods')}>节次</Button>
               </View>
@@ -554,9 +559,9 @@ function ClassFlow() {
         </LiquidGlass>
         {/* The glass button keeps a fixed size inside a clipping wrapper whose width animates. */}
         <Animated.View pointerEvents={hidePlus ? 'none' : 'auto'} importantForAccessibility={hidePlus ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={hidePlus} aria-hidden={hidePlus}
-          style={[styles.dockAction, styles.dockActionClip, plusReveal]}>
+          style={[styles.dockAction, styles.dockActionClip, !pixel && styles.dockActionRound, plusReveal]}>
           <View style={styles.dockActionFixed}>
-            <LiquidGlass interactive accent={theme.dark ? 'rgba(150,165,255,0.92)' : 'rgba(54,75,182,0.9)'} style={styles.dockAction}>
+            <LiquidGlass interactive accent={theme.dark ? 'rgba(150,165,255,0.5)' : 'rgba(54,75,182,0.55)'} style={styles.dockAction}>
               <PressSurface accessibilityRole="button" accessibilityLabel={tab === 'planner' ? '添加个人安排' : '添加课程'} scale={0.9} style={[styles.dockActionPress, pixel && { borderRadius: 0 }]}
                 onPress={() => { haptic('medium'); add(tab === 'planner' ? 'plan' : 'course'); }}>
                 <Icon name="plus" size={26} strokeWidth={2.2} color={theme.onAccent} />
@@ -603,6 +608,7 @@ function ClassFlow() {
 }
 
 function Brand() {
+  const styles = usePixelStyles(baseStyles);
   const theme = useTheme();
   return <View style={styles.brand}>
     <View style={[styles.mark, { backgroundColor: theme.blue }]}><Icon name="calendar" size={21} color={theme.onAccent} /></View>
@@ -616,6 +622,7 @@ function Brand() {
 // while pages are swiped, can itself be dragged, and swells slightly while
 // held, like a drop of glass magnifying the tab beneath it.
 function DockTabs({ tab, position, pending, enabled, onSelect }: { tab: Tab; position: SharedValue<number>; pending: SharedValue<number>; enabled: boolean; onSelect: (tab: Tab) => void }) {
+  const styles = usePixelStyles(baseStyles);
   const theme = useTheme();
   const pixel = useGlass().style === 'pixel';
   const { reduceMotion } = useAccessibility();
@@ -668,6 +675,7 @@ function DockTabs({ tab, position, pending, enabled, onSelect }: { tab: Tab; pos
 }
 
 function NavItem({ item, compact, plain, selected, onPress }: { item: typeof NAV[number]; compact?: boolean; plain?: boolean; selected: boolean; onPress: () => void }) {
+  const styles = usePixelStyles(baseStyles);
   const theme = useTheme();
   const family = fontFamily(useGlass().font);
   const { reduceMotion } = useAccessibility();
@@ -692,13 +700,15 @@ function NavItem({ item, compact, plain, selected, onPress }: { item: typeof NAV
   </PressSurface>;
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   shell: { flex: 1, minHeight: 0, overflow: 'hidden' },
   root: { flex: 1, minHeight: 0, overflow: 'hidden', flexDirection: 'row' },
   dockRow: { width: '100%', maxWidth: 460, flexDirection: 'row', alignItems: 'center', gap: 10 },
   dockBar: { flex: 1, height: 64, padding: 5 },
   dockAction: { width: 64, height: 64 },
   dockActionClip: { overflow: 'hidden' },
+  // Round clip for the glass button, so its shadow is not cut into a square.
+  dockActionRound: { borderRadius: metrics.radius.full },
   dockActionFixed: { position: 'absolute', left: 0, top: 0, width: 64, height: 64 },
   dockActionPress: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: metrics.radius.full },
   dragToggle: { minHeight: 36, borderRadius: metrics.radius.full, borderWidth: 1, flexShrink: 1 },

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useId, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useId, useMemo, useRef, useState } from 'react';
 import { Image, Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Defs, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,6 +33,24 @@ export function useFont() {
   const { font } = useContext(GlassContext);
   const family = fontFamily(font);
   return family ? { fontFamily: family } : null;
+}
+
+/** Pixel style: the same styles with every rounded corner squared off (circles become blocks too). */
+export function pixelize<T extends Record<string, unknown>>(styles: T): T {
+  const radii = ['borderRadius', 'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius'];
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(styles)) {
+    if (!value || typeof value !== 'object') { out[key] = value; continue; }
+    const next: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+    for (const radius of radii) if (typeof next[radius] === 'number' && (next[radius] as number) > 3) next[radius] = 3;
+    out[key] = next;
+  }
+  return out as T;
+}
+/** A component's styles, squared off while the pixel style is active. */
+export function usePixelStyles<T extends Record<string, unknown>>(styles: T): T {
+  const pixel = useContext(GlassContext).style === 'pixel';
+  return useMemo(() => pixel ? pixelize(styles) : styles, [pixel, styles]);
 }
 
 // Pixel style: square-ish corners, thick outlines, a bevel (light top-left, dark bottom-right) and hard drop shadows.
