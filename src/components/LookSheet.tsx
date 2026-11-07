@@ -59,16 +59,16 @@ export function LookSheet({ closingRequested = false, appearance, onApply, onApp
       if (!picked) return;
       haptic('success');
       onAppearance({ background: picked.uri, backgroundKind: picked.kind, backgroundFrame: null, backdrop: null });
-      // A still photo goes straight to framing; GIFs and videos fill the screen centred.
-      if (picked.kind === 'image') setFraming(true);
+      // Every wallpaper — photo, GIF or video — goes straight to choosing the part that fills the screen.
+      setFraming(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '无法读取这个文件');
     } finally { setPicking(null); }
   }
 
   if (framing && appearance.background) {
-    return <Sheet closingRequested={closingRequested} title="选择显示区域" subtitle="只记录显示哪一块，原图不会被修改。" onClose={() => setFraming(false)}>
-      <WallpaperFramer uri={appearance.background} initial={appearance.backgroundFrame} onCancel={() => setFraming(false)}
+    return <Sheet closingRequested={closingRequested} title="选择显示区域" subtitle="只记录显示哪一块，原文件不会被修改。" onClose={() => setFraming(false)}>
+      <WallpaperFramer uri={appearance.background} kind={appearance.backgroundKind} initial={appearance.backgroundFrame} onCancel={() => setFraming(false)}
         onDone={frame => { haptic('success'); onAppearance({ backgroundFrame: frame }); setFraming(false); }} />
     </Sheet>;
   }
@@ -87,7 +87,7 @@ export function LookSheet({ closingRequested = false, appearance, onApply, onApp
       <View style={styles.choices}>
         <Button small icon="image" disabled={!!picking} onPress={() => choose('image')}>{picking === 'image' ? '读取中…' : '图片或动图'}</Button>
         {videoWallpaperSupported && <Button small icon="file" disabled={!!picking} onPress={() => choose('video')}>{picking === 'video' ? '读取中…' : '视频'}</Button>}
-        {hasFile && appearance.backgroundKind !== 'video' && <Button small icon="edit" onPress={() => setFraming(true)}>调整区域</Button>}
+        {hasFile && <Button small icon="edit" onPress={() => setFraming(true)}>调整区域</Button>}
         {(hasFile || !!appearance.backdrop) && <Button small variant="ghost" icon="close" onPress={() => { haptic('light'); onAppearance({ background: null, backgroundFrame: null, backdrop: null }); }}>恢复默认</Button>}
       </View>
       <Text style={ui.label}>图片和 GIF 不超过 20 MB，建议竖图约 1080×2400；视频不超过 60 MB，建议 30 秒以内的 MP4，静音循环播放，会更耗电。</Text>

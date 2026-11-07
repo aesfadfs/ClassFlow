@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, PanResponder, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { clampFrame, type WallpaperFrame } from '../domain/appearance';
+import { clampFrame, type BackgroundKind, type WallpaperFrame } from '../domain/appearance';
+import { VideoWallpaper } from '../ui/VideoWallpaper';
 import { Button, useUI } from '../ui/primitives';
 import { metrics } from '../ui/theme';
 
@@ -12,19 +13,23 @@ const DIM = 'rgba(0,0,0,0.55)';
  * screen's shape is dragged (and pinched) over it. Only the rectangle is stored; the file is
  * never rewritten. Lives inside the appearance sheet, not a second Modal.
  */
-export function WallpaperFramer({ uri, initial, onCancel, onDone }: {
-  uri: string; initial: WallpaperFrame | null; onCancel: () => void; onDone: (frame: WallpaperFrame | null) => void;
+export function WallpaperFramer({ uri, kind = 'image', initial, onCancel, onDone }: {
+  uri: string; kind?: BackgroundKind; initial: WallpaperFrame | null; onCancel: () => void; onDone: (frame: WallpaperFrame | null) => void;
 }) {
   const ui = useUI();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const screenAspect = screenW / Math.max(1, screenH);
   const [area, setArea] = useState({ width: 1, height: 1 });
-  const [ratio, setRatio] = useState(0.75);
+  // Width / height of the picture; `measured` once the real value is known (a video reports it after loading).
+  const [{ ratio, measured }, setSize] = useState({ ratio: 0.75, measured: false });
+  const setRatio = (value: number) => setSize({ ratio: value, measured: true });
   // Box width as a fraction of the shown picture, and its centre offset from the picture centre.
   const [fraction, setFraction] = useState(1);
   const [center, setCenter] = useState({ x: 0, y: 0 });
   const [preview, setPreview] = useState(false);
-  useEffect(() => { Image.getSize(uri, (w, h) => { if (w > 0 && h > 0) setRatio(w / h); }, () => {}); }, [uri]);
+  const video = kind === 'video';
+  // A photo or GIF is measured directly; a video reports its size from the player once it has loaded.
+  useEffect(() => { if (!video) Image.getSize(uri, (w, h) => { if (w > 0 && h > 0) setRatio(w / h); }, () => {}); }, [uri, video]);
 
   // The picture shown whole (contain) inside the framing area.
   const shown = useMemo(() => {
@@ -49,11 +54,11 @@ export function WallpaperFramer({ uri, initial, onCancel, onDone }: {
   // Start from the stored frame once the picture has been measured.
   const seeded = useRef(false);
   useEffect(() => {
-    if (seeded.current || !initial || area.width <= 1 || shown.width <= 1) return;
+    if (seeded.current || !initial || !measured || area.width <= 1 || shown.width <= 1) return;
     seeded.current = true;
     setFraction(initial.w);
     setCenter({ x: (initial.x + initial.w / 2 - 0.5) * shown.width, y: (initial.y + initial.h / 2 - 0.5) * shown.height });
-  }, [initial, area.width, shown.width, shown.height]);
+  }, [initial, measured, area.width, shown.width, shown.height]);
 
   const live = useRef({ center, fraction });
   live.current = { center, fraction };
@@ -82,9 +87,9 @@ export function WallpaperFramer({ uri, initial, onCancel, onDone }: {
     <View testID="wallpaper-framer" style={[styles.area, { aspectRatio: screenAspect }]} onLayout={event => setArea({ width: Math.max(1, event.nativeEvent.layout.width), height: Math.max(1, event.nativeEvent.layout.height) })}
       {...(preview ? {} : pan.panHandlers)}>
       {preview
-        ? <Image source={{ uri }} resizeMode="stretch" style={{ position: 'absolute', width: `${100 / frame.w}%`, height: `${100 / frame.h}%`, left: `${-(frame.x / frame.w) * 100}%`, top: `${-(frame.y / frame.h) * 100}%` }} />
+        ? video ? <VideoWallpaper uri={uri} frame={frame} /> : <Image source={{ uri }} resizeMode="stretch" style={{ position: 'absolute', width: `${100 / frame.w}%`, height: `${100 / frame.h}%`, left: `${-(frame.x / frame.w) * 100}%`, top: `${-(frame.y / frame.h) * 100}%` }} />
         : <>
-          <Image source={{ uri }} resizeMode="contain" style={StyleSheet.absoluteFill} />
+          {video ? <VideoWallpaper uri={uri} fit="contain" onSize={setRatio} /> : <Image source={{ uri }} resizeMode="contain" style={StyleSheet.absoluteFill} />}
           <View pointerEvents="none" style={[styles.shade, { left: 0, right: 0, top: 0, height: Math.max(0, boxTop) }]} />
           <View pointerEvents="none" style={[styles.shade, { left: 0, right: 0, top: boxTop + boxHeight, bottom: 0 }]} />
           <View pointerEvents="none" style={[styles.shade, { left: 0, width: Math.max(0, boxLeft), top: boxTop, height: boxHeight }]} />

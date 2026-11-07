@@ -110,7 +110,7 @@ export function AppBackground({ blur = 0, testID }: { blur?: number; testID?: st
     return style === 'pixel' ? <PixelBackdrop /> : <Ambient />;
   }
   return <View testID={testID} pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden', backgroundColor: theme.bg }]}>
-    {kind === 'video' ? <VideoWallpaper uri={uri} /> : <FramedImage uri={uri} frame={frame} blur={blur} animated={kind === 'gif'} />}
+    {kind === 'video' ? <VideoWallpaper uri={uri} frame={frame} /> : <FramedImage uri={uri} frame={frame} blur={blur} animated={kind === 'gif'} />}
     <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.bg, opacity: dim }]} />
   </View>;
 }
