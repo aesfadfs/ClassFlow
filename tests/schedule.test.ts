@@ -339,3 +339,32 @@ test('week cells drop the campus prefix but keep the room and unknown formats', 
   assert.equal(compactLocation('桂林洋校区'), '桂林洋校区');
   assert.equal(compactLocation('[桂]'), '[桂]');
 });
+
+test('custom presets carry the wallpaper and the card pictures', async () => {
+  const { applyPreset, matchesPreset, savePreset, setCardImage, defaultAppearance, restoreAppearance, referencedImages, BUILTIN_PRESETS } = await import('../src/domain/appearance.ts');
+  const math = createEntry({ id: 'm1', title: '高等数学' });
+  let look: ReturnType<typeof defaultAppearance> = { ...defaultAppearance(), background: 'file:///images/wall-a.jpg' };
+  look = setCardImage(look, math, 'title', 'file:///images/card-a.jpg', true);
+  look = savePreset(look, '我的', 'custom:p1');
+  const preset = look.presets[0];
+  assert.deepEqual(preset.cardImages, { 'title:高等数学': 'file:///images/card-a.jpg' });
+  assert.deepEqual(preset.cardFrost, { 'title:高等数学': true });
+  // Change everything, then bring the preset back.
+  let changed = setCardImage({ ...applyPreset(look, BUILTIN_PRESETS[1]), background: 'file:///images/wall-b.jpg' }, math, 'title', 'file:///images/card-b.jpg');
+  assert.ok(!matchesPreset(changed, preset));
+  changed = applyPreset(changed, preset);
+  assert.equal(changed.background, 'file:///images/wall-a.jpg');
+  assert.equal(changed.cardImages['title:高等数学'], 'file:///images/card-a.jpg');
+  assert.equal(changed.cardFrost['title:高等数学'], true);
+  assert.ok(matchesPreset(changed, preset));
+  // Built-in presets keep the pictures; files a preset still needs are not cleaned up.
+  assert.equal(applyPreset(changed, BUILTIN_PRESETS[0]).cardImages['title:高等数学'], 'file:///images/card-a.jpg');
+  const later = setCardImage({ ...changed, background: null }, math, 'title', null);
+  assert.ok(referencedImages(later).has('file:///images/card-a.jpg') && referencedImages(later).has('file:///images/wall-a.jpg'));
+  // Survives storage; an old preset without pictures leaves the cards alone.
+  const restored = restoreAppearance(JSON.stringify(look));
+  assert.deepEqual(restored.presets[0].cardImages, preset.cardImages);
+  const old = restoreAppearance(JSON.stringify({ presets: [{ id: 'custom:old', name: '旧', uiStyle: 'glass' }] })).presets[0];
+  assert.equal(old.cardImages, undefined);
+  assert.equal(applyPreset(changed, old).cardImages['title:高等数学'], 'file:///images/card-a.jpg');
+});

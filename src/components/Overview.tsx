@@ -247,8 +247,8 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
           onPress={event => { if (tap.isTap(event)) onPress(); }}
           onLongPress={() => { release(false); onLongPress(); }} style={{ flex: 1 }}>
           <View style={[styles.face, { padding: compact ? 14 : 20 }, px && styles.pixelFace]}>
-            {/* Frosted base: the page background, blurred and lined up with the screen, so the card reads as glass. */}
-            {glass && frosted && !px && !image ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, backdrop]}><Backdrop offset={frame} /></Animated.View> : null}
+            {/* Glass cards are see-through like the other panels: the real wallpaper shows through the tint.
+                (They used to draw their own blurred copy of it, which drifted out of line while paging.) */}
             {image ? <>
               <Image testID="card-image" source={{ uri: image.uri }} blurRadius={image.frost ? Math.max(6, look.blur) : 0} resizeMode="cover" style={StyleSheet.absoluteFill} />
               {image.frost && <View testID="card-frost" pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />}

@@ -4,7 +4,7 @@
 
 ## 项目约定
 
-- 使用中文与用户沟通。项目是 Expo 56 / React Native 0.85 / React 19 / TypeScript 应用，支持 Android、iOS 和 Web；当前版本 0.1.20，Android versionCode 22。
+- 使用中文与用户沟通。项目是 Expo 56 / React Native 0.85 / React 19 / TypeScript 应用，支持 Android、iOS 和 Web；当前版本 0.1.21，Android versionCode 23。
 - 使用 npm 和已有 `package-lock.json`，新电脑先执行 `npm ci`。不要为迁移主动升级框架或重写项目。
 - 首次启动必须为空白，不能自动添加示例课程或个人安排。旧数据迁移只能清理仍标为未修改示例的数据，保留真实用户数据。
 - 学校、CSV、HTML、JSON 导入默认覆盖课程并保留个人安排；用户关闭覆盖选项才合并。取消部分课程勾选不能改变覆盖模式。导入和编辑要保留撤销能力。

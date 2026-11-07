@@ -92,6 +92,8 @@ export type LookPreset = {
   glassPanel: number; glassBlur: number; glassCard: number; glow: boolean; backgroundDim: number;
   background?: string | null;
   backgroundKind?: BackgroundKind; backgroundFrame?: WallpaperFrame | null; backdrop?: string | null; wallpaperTone?: WallpaperTone;
+  /** Card pictures (and their frost) a custom preset brings back; absent on built-in presets. */
+  cardImages?: Record<string, string>; cardFrost?: Record<string, true>;
 };
 /** Wallpaper fields a custom preset carries along with `background`. */
 const WALLPAPER_KEYS = ['backgroundKind', 'backgroundFrame', 'backdrop', 'wallpaperTone'] as const;
@@ -109,24 +111,46 @@ export function applyPreset(appearance: Appearance, preset: LookPreset): Appeara
     next.background = preset.background;
     for (const key of WALLPAPER_KEYS) if (preset[key] !== undefined) (next as Record<string, unknown>)[key] = preset[key];
   }
+  if (preset.cardImages !== undefined) {
+    next.cardImages = { ...preset.cardImages };
+    next.cardFrost = { ...(preset.cardFrost ?? {}) };
+  }
   return next;
 }
 
 /** Whether the current look is exactly this preset (shown as the selected one). */
 export const matchesPreset = (appearance: Appearance, preset: LookPreset) =>
   LOOK_KEYS.every(key => appearance[key] === preset[key]) && (preset.background === undefined
-    || (preset.background === appearance.background && (preset.backdrop === undefined || preset.backdrop === appearance.backdrop)));
+    || (preset.background === appearance.background && (preset.backdrop === undefined || preset.backdrop === appearance.backdrop)))
+  && (preset.cardImages === undefined || sameImages(preset.cardImages, appearance.cardImages));
+const sameImages = (a: Record<string, string>, b: Record<string, string>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, uri]) => b[key] === uri);
 
 /** Save the current look as a new preset of the user's own. */
 export function savePreset(appearance: Appearance, name: string, id: string): Appearance {
   const title = name.trim().slice(0, 20);
   if (!title) throw new Error('给预设起个名字吧');
   if (appearance.presets.length >= MAX_PRESETS) throw new Error(`最多保存 ${MAX_PRESETS} 个自定义预设`);
-  const preset: LookPreset = { id, name: title, background: appearance.background, ...Object.fromEntries([...LOOK_KEYS, ...WALLPAPER_KEYS].map(key => [key, appearance[key]])) } as LookPreset;
+  const preset: LookPreset = {
+    id, name: title, background: appearance.background, ...Object.fromEntries([...LOOK_KEYS, ...WALLPAPER_KEYS].map(key => [key, appearance[key]])),
+    cardImages: { ...appearance.cardImages }, cardFrost: { ...appearance.cardFrost },
+  } as LookPreset;
   return { ...appearance, presets: [...appearance.presets, preset] };
 }
 
 export const deletePreset = (appearance: Appearance, id: string): Appearance => ({ ...appearance, presets: appearance.presets.filter(preset => preset.id !== id) });
+
+function restoreCardImages(images: unknown, frost: unknown) {
+  const cardImages: Record<string, string> = {};
+  if (images && typeof images === 'object') {
+    for (const [key, uri] of Object.entries(images)) if (/^(entry|title):.{1,120}$/.test(key) && isUri(uri)) cardImages[key] = uri;
+  }
+  const cardFrost: Record<string, true> = {};
+  if (frost && typeof frost === 'object') {
+    for (const [key, on] of Object.entries(frost)) if (on === true && key in cardImages) cardFrost[key] = true;
+  }
+  return { cardImages, cardFrost };
+}
 
 function restorePreset(value: unknown, base: Appearance): LookPreset | null {
   if (!value || typeof value !== 'object') return null;
@@ -146,6 +170,8 @@ function restorePreset(value: unknown, base: Appearance): LookPreset | null {
     backgroundFrame: clampFrame(raw.backgroundFrame),
     backdrop: wallpaperId(raw.backdrop),
     wallpaperTone: tone(raw.wallpaperTone),
+    // Presets saved before card pictures were included leave the cards as they are.
+    ...(raw.cardImages !== undefined ? restoreCardImages(raw.cardImages, raw.cardFrost) : {}),
   };
 }
 const backgroundKind = (value: unknown): BackgroundKind => value === 'gif' || value === 'video' ? value : 'image';
@@ -193,7 +219,8 @@ export function forgetEntryImage(appearance: Appearance, id: string): Appearance
   return { ...appearance, cardImages, cardFrost };
 }
 
-export const referencedImages = (appearance: Appearance) => new Set([appearance.background, ...Object.values(appearance.cardImages), ...appearance.presets.map(preset => preset.background)].filter((uri): uri is string => !!uri));
+export const referencedImages = (appearance: Appearance) => new Set([appearance.background, ...Object.values(appearance.cardImages),
+  ...appearance.presets.flatMap(preset => [preset.background, ...Object.values(preset.cardImages ?? {})])].filter((uri): uri is string => !!uri));
 
 const isUri = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length < 3_000_000
   && /^(file:|content:|data:image\/|blob:|https?:)/.test(value);
@@ -203,14 +230,7 @@ export function restoreAppearance(raw: string | null): Appearance {
   if (!raw) return base;
   try {
     const value = JSON.parse(raw) as Partial<Appearance>;
-    const cardImages: Record<string, string> = {};
-    if (value.cardImages && typeof value.cardImages === 'object') {
-      for (const [key, uri] of Object.entries(value.cardImages)) if (/^(entry|title):.{1,120}$/.test(key) && isUri(uri)) cardImages[key] = uri;
-    }
-    const cardFrost: Record<string, true> = {};
-    if (value.cardFrost && typeof value.cardFrost === 'object') {
-      for (const [key, on] of Object.entries(value.cardFrost)) if (on === true && key in cardImages) cardFrost[key] = true;
-    }
+    const { cardImages, cardFrost } = restoreCardImages(value.cardImages, value.cardFrost);
     return {
       version: 1,
       background: isUri(value.background) ? value.background : null,
