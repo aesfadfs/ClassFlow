@@ -26,6 +26,8 @@ Web 预览默认在 `http://localhost:8081`。iOS 原生开发需要 macOS 和 X
 
 ### Android 原生构建
 
+0.1.19（versionCode 21）：修复视频壁纸在切到后台再回来时停住、并出现播放按钮的问题。现在回到 App 后视频会自动接着播放，视频自带的播放控件全部隐藏；系统在后台回收了视频画面时也会自动重新载入。安装包 `ClassFlow-Android-0.1.19.apk`（ARM64，kenshi 签名，可覆盖安装），SHA-256：`041D3A209CA03BFFC33EE4658E9669595FEDCFC4A75B6D60E18B13BAE042BF94`。
+
 0.1.18（versionCode 20）：视频壁纸和 GIF 也能像图片一样选择显示区域。选好视频或动图后直接进入取景，可拖动白框、双指缩放，并切换「看效果」预览；之后随时可以在「外观与壁纸 → 调整区域」重新调整。只记录显示哪一块，原文件不会被修改。安装包 `ClassFlow-Android-0.1.18.apk`（ARM64，kenshi 签名，可覆盖安装），SHA-256：`88915361B08079A44D453BBAD0644F44BFB4FDA52D9489340A3EE6B603A83D75`。
 
 0.1.17（versionCode 19）：

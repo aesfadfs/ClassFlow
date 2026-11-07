@@ -38,7 +38,7 @@ npm run preview:web
 
 ## 3. 当前实现和关键文件
 
-当前版本为 0.1.18 / Android versionCode 20，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
+当前版本为 0.1.19 / Android versionCode 21，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
 
 已实现课表概览、周 / 日时间画布、课程与个人安排的增删改、拖动和时长调整、冲突提示、撤销、本地保存、JSON 备份、学期设置、CSV / HTML / JSON 导入和原生学校浏览器。支持浅色 / 深色与响应式布局。“拍照翻译”目前只是未来功能入口。
 
@@ -70,7 +70,7 @@ npm run preview:web
 
 ## 4. 测试与当前验证范围
 
-0.1.18 发布前重新执行并通过：TypeScript 类型检查、43 项业务测试、全部浏览器回归和 `verify-android-import.ps1` 包内核验；APK 的 SHA-256 记录在 README 对应版本说明中。作者已真机试用 0.1.17 的铃声闹钟等功能；0.1.18 的视频取景未经真机验证，iOS 未验收。
+0.1.19 发布前重新执行并通过：TypeScript 类型检查、43 项业务测试、全部浏览器回归和 `verify-android-import.ps1` 包内核验；APK 的 SHA-256 记录在 README 对应版本说明中。作者已真机试用 0.1.17 的铃声闹钟等功能；0.1.19 的视频续播由作者用测试包试用，iOS 未验收。
 
 当前迁移执行环境只有 Node 可直接调用、npm 不在 PATH，实际检查使用 `node node_modules/typescript/bin/tsc --noEmit` 和 `node --experimental-strip-types --test tests/*.test.ts`，分别对应项目的 `typecheck` 和 `test` 脚本。新电脑使用完整 Node 安装即可按上面的 npm 命令运行。
 
