@@ -15,7 +15,8 @@ import { hainnu } from '../features/schools';
 import { version as APP_VERSION } from '../../package.json';
 import { GAP_LEVELS, LEAD_LEVELS, SOUNDS, VIBRATIONS } from '../domain/reminders';
 import { alarmsExact, alarmsSupported, openAlarmAccessSettings } from '../services/notifications';
-import { BLUR_LEVELS, CARD_LEVELS, DIM_LEVELS, PANEL_LEVELS, type Appearance, type CardImageScope } from '../domain/appearance';
+import { pickRingtone } from '../services/ringtones';
+import { type Appearance, type CardImageScope } from '../domain/appearance';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SchoolBrowser } from './SchoolBrowser';
 import { normalizeZhengfang, requiredSectionTimes, resolveSchoolPeriodTimes, type SectionTime, type TimetableCapture } from '../features/zhengfang';
@@ -630,6 +631,14 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [backupReady, setBackupReady] = useState(false);
+  const [ringtoneError, setRingtoneError] = useState('');
+  async function chooseRingtone() {
+    setRingtoneError('');
+    try {
+      const customSound = await pickRingtone();
+      if (customSound && appearance && onAppearance) onAppearance({ reminders: { ...appearance.reminders, sound: 'custom', customSound } });
+    } catch (error) { setRingtoneError(error instanceof Error ? error.message : '无法读取这个音频文件'); }
+  }
   function save() {
     try {
       const date = parseDate(start);
@@ -681,7 +690,7 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
       <View style={styles.divider} />
       <View style={styles.group}>
         <Text accessibilityRole="header" style={styles.itemTitle}>上课提醒</Text>
-        <Toggle label="课前通知" detail={Platform.OS === 'web' ? '网页版不支持系统通知，请在手机 App 中开启' : '每节课开始前，用系统通知弹窗提醒你'} value={appearance.reminders.enabled}
+        <Toggle label="课前通知" detail={Platform.OS === 'web' ? '网页版不支持系统通知，请在手机 App 中开启' : alarmsSupported() ? '每节课开始前弹出通知并响铃；走闹钟音量，静音或勿扰时也会响' : '每节课开始前，用系统通知弹窗提醒你'} value={appearance.reminders.enabled}
           onChange={async enabled => {
             if (enabled && !(await onEnableReminders?.())) return;
             onAppearance({ reminders: { ...appearance.reminders, enabled } });
@@ -694,23 +703,32 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
           <Choices<string> label="连堂不提醒的间隔" value={String(appearance.reminders.gap)} onChange={value => onAppearance({ reminders: { ...appearance.reminders, gap: Number(value) } })}
             items={GAP_LEVELS.map(minutes => ({ key: String(minutes), title: minutes ? `${minutes} 分钟` : '都提醒' }))} />
           <Toggle label="个人安排也提醒" detail="默认只提醒课程" value={appearance.reminders.plans} onChange={plans => onAppearance({ reminders: { ...appearance.reminders, plans } })} />
-          {alarmsSupported() && <>
-            <Toggle label="铃声闹钟" detail="24 小时内的提醒改用闹钟响铃：走闹钟音量，静音或勿扰时也会响，响 1 分钟或点「停止」结束，响过即删。关闭后自动删除课序创建的闹钟，不会动你自己设的闹钟。" value={appearance.reminders.alarm}
-              onChange={alarm => onAppearance({ reminders: { ...appearance.reminders, alarm } })} />
-            {appearance.reminders.alarm && !alarmsExact() && <>
-              <Text style={[styles.hint, { color: theme.warning }]}>系统没有授予「闹钟和提醒」权限，闹钟可能晚几分钟才响。</Text>
-              <Button small icon="settings" onPress={openAlarmAccessSettings}>去开启闹钟和提醒权限</Button>
-            </>}
+          {alarmsSupported() && !alarmsExact() && <>
+            <Text style={[styles.hint, { color: theme.warning }]}>系统没有授予「闹钟和提醒」权限，提醒可能晚几分钟才响。</Text>
+            <Button small icon="settings" onPress={openAlarmAccessSettings}>去开启闹钟和提醒权限</Button>
           </>}
           <Text style={styles.hint}>提醒声音（内置铃声约 5–8 秒）</Text>
-          <Choices<string> label="提醒声音" value={appearance.reminders.sound} onChange={value => onAppearance({ reminders: { ...appearance.reminders, sound: SOUNDS.find(item => item.key === value)!.key } })}
-            items={SOUNDS.map(item => ({ key: item.key, title: item.title }))} />
+          <Choices<string> label="提醒声音" value={appearance.reminders.sound} onChange={value => {
+            const sound = SOUNDS.find(item => item.key === value)!.key;
+            // The first time 「自定义」 is chosen there is no tone yet: pick one first.
+            if (sound === 'custom' && !appearance.reminders.customSound) { void chooseRingtone(); return; }
+            onAppearance({ reminders: { ...appearance.reminders, sound } });
+          }}
+            items={SOUNDS.filter(item => item.key !== 'custom' || alarmsSupported()).map(item => ({ key: item.key, title: item.title }))} />
+          {alarmsSupported() && appearance.reminders.sound === 'custom' && appearance.reminders.customSound && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text numberOfLines={1} style={[styles.hint, { flex: 1 }]}>自定义铃声：{appearance.reminders.customSound.name}</Text>
+            <Button small variant="ghost" icon="refresh" onPress={() => { void chooseRingtone(); }}>更换</Button>
+          </View>}
+          {alarmsSupported() && <Text style={styles.hint}>自定义铃声支持 MP3、M4A、AAC、OGG、OPUS、WAV、FLAC、AMR、MIDI，20 MB 以内；会复制一份存在课序里。</Text>}
+          {!!ringtoneError && <Text style={[styles.hint, { color: theme.warning }]}>{ringtoneError}</Text>}
           <Text style={styles.hint}>振动方式（「持续」约振动 10 秒）</Text>
           <Choices<string> label="振动方式" value={appearance.reminders.vibration} onChange={value => onAppearance({ reminders: { ...appearance.reminders, vibration: VIBRATIONS.find(item => item.key === value)!.key } })}
             items={VIBRATIONS.map(item => ({ key: item.key, title: item.title }))} />
           {onTestReminder && <Button small icon="vibrate" onPress={onTestReminder}>发送测试提醒</Button>}
-          <Text style={styles.hint}>手机处于静音或勿扰模式时，按系统设置只振动或不响。</Text>
-          <Text style={styles.hint}>提醒会提前排好未来一周；之后打开一次课序即可继续排下去。</Text>
+          <Text style={styles.hint}>{alarmsSupported()
+            ? '响 1 分钟，点「停止」或打开课序就停，响过的提醒自动删除。这是课序自己的提醒，不会添加或改动系统时钟里的闹钟。'
+            : '手机处于静音或勿扰模式时，按系统设置只振动或不响。'}</Text>
+          <Text style={styles.hint}>提醒会提前排好未来一周，每次打开课序都会按最新课表重新核对；超过一周没打开时，后面的提醒要等下次打开才会排上。</Text>
         </>}
       </View>
     </>}

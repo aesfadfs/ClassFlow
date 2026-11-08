@@ -72,21 +72,35 @@ class AlarmService : Service() {
       .build()
   }
 
+  /** A bundled tone's name, "default", or the URI of the user's own tone (a file the app keeps). */
+  private fun toneUri(sound: String): Uri? = when {
+    sound.startsWith("file:") -> Uri.parse(sound).takeIf { uri -> uri.path?.let { java.io.File(it).exists() } == true }
+    sound == "default" -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+    else -> resources.getIdentifier(sound, "raw", packageName).takeIf { it != 0 }?.let { Uri.parse("android.resource://$packageName/$it") }
+  }
+
   private fun play(sound: String) {
     if (sound == "none") return
-    val uri: Uri? = if (sound == "default") RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-    else resources.getIdentifier(sound, "raw", packageName).takeIf { it != 0 }?.let { Uri.parse("android.resource://$packageName/$it") }
-    if (uri == null) return
-    try {
-      player = MediaPlayer().apply {
-        setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-        setDataSource(this@AlarmService, uri)
-        setWakeMode(this@AlarmService, PowerManager.PARTIAL_WAKE_LOCK)
-        isLooping = true
-        prepare()
-        start()
-      }
-    } catch (_: Exception) { releasePlayback() }
+    // A custom tone that is missing or cannot be decoded still rings, with the class bell.
+    if (!start(toneUri(sound)) && sound != FALLBACK_TONE) start(toneUri(FALLBACK_TONE))
+  }
+
+  private fun start(uri: Uri?): Boolean {
+    if (uri == null) return false
+    val next = MediaPlayer()
+    return try {
+      next.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+      next.setDataSource(this, uri)
+      next.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK)
+      next.isLooping = true
+      next.prepare()
+      next.start()
+      player = next
+      true
+    } catch (_: Exception) {
+      next.release()
+      false
+    }
   }
 
   private fun vibrate(pattern: LongArray) {
@@ -132,6 +146,7 @@ class AlarmService : Service() {
     private const val CHANNEL_ID = "classflow-alarm"
     private const val RINGING_ID = 4207
     private const val RING_MS = 60_000L
+    private const val FALLBACK_TONE = "class_bell"
 
     fun stop(context: Context) {
       // Only reaches the service when it is running; otherwise there is nothing to stop.
@@ -144,7 +159,7 @@ class AlarmService : Service() {
       if (manager.getNotificationChannel(CHANNEL_ID) != null) return
       // The service plays the tone itself on the alarm stream, so the channel stays silent.
       manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "上课闹钟", NotificationManager.IMPORTANCE_HIGH).apply {
-        description = "开启「闹钟响铃」后，24 小时内的上课提醒以闹钟方式响铃"
+        description = "上课提醒响铃时的通知（铃声由课序走闹钟音量播放）"
         setSound(null, null)
         enableVibration(false)
         lockscreenVisibility = Notification.VISIBILITY_PUBLIC

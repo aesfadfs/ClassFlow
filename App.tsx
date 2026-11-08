@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, BackHandler, Image, Platform, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, AppState, BackHandler, Platform, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { BlurTargetView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
@@ -14,7 +14,7 @@ import { COLORS, DAYS, createEntry, dateKey, parseTime, uid, dayOfWeek, emptySta
 import { analyzeImport } from './src/domain/import';
 import { exportText } from './src/services/files';
 import { cleanUpImages, pickImage } from './src/services/images';
-import { alarmsSupported, requestReminderPermission, sendTestReminder, stopAlarmRinging, syncReminders } from './src/services/notifications';
+import { requestReminderPermission, sendTestReminder, stopAlarmRinging, syncReminders } from './src/services/notifications';
 import { planReminders } from './src/domain/reminders';
 import { hainnu } from './src/features/schools';
 import { APPEARANCE_KEY, WALLPAPERS, wallpaperScheme, applyPreset, deletePreset, savePreset, cardImageFor, forgetEntryImage, referencedImages, restoreAppearance, setCardImage, type Appearance, type CardImageScope } from './src/domain/appearance';
@@ -603,7 +603,7 @@ function ClassFlow() {
     {sheet === 'import' && <ImportSheet closingRequested={sheetClosing} semesterWeeks={state.preferences.semesterWeeks} existingEntries={state.entries} demo={state.demo} onClose={() => setSheet(null)} onImport={importEntries} />}
     {sheet === 'settings' && <SettingsSheet closingRequested={sheetClosing} preferences={state.preferences} onSave={savePreferences} onClose={() => setSheet(null)} onExport={writeBackup} onRestoreLocal={restoreLocalBackup} demo={state.demo} onClearDemo={clearDemo}
       appearance={appearance} onAppearance={updateAppearance} onEnableReminders={enableReminders}
-      onTestReminder={() => { void sendTestReminder(appearance.reminders).then(sent => notify(sent ? (appearance.reminders.alarm && alarmsSupported() ? '3 秒后会响一次测试闹钟，锁屏等几秒试试' : '3 秒后会收到一条测试提醒') : '没有通知权限，无法发送测试提醒')).catch(() => notify('测试提醒发送失败')); }} />}
+      onTestReminder={() => { void sendTestReminder(appearance.reminders).then(sent => notify(sent ? '3 秒后会响一次测试提醒，锁屏等几秒试试' : '没有通知权限，无法发送测试提醒')).catch(() => notify('测试提醒发送失败')); }} />}
   </View></BlurTargetContext.Provider></BackgroundContext.Provider></GlassContext.Provider></SchemeContext.Provider>;
 }
 

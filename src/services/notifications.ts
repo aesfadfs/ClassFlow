@@ -1,15 +1,18 @@
 import { Platform } from 'react-native';
 import ClassAlarm from '../../modules/class-alarm';
-import { splitAlarms, vibrationPattern, type Reminder, type ReminderSettings } from '../domain/reminders';
+import { vibrationPattern, type Reminder, type ReminderSettings } from '../domain/reminders';
 
-// System notifications for class reminders (Android / iOS). The web build has
-// no background scheduling, so every call is a no-op there.
+// Class reminders. On Android each one is an exact alarm owned by ClassFlow that
+// rings through its own notification (alarm volume, so silent mode does not mute
+// it) and is deleted once it has rung; it never touches the system clock app.
+// iOS uses ordinary scheduled notifications. The web build has no background
+// scheduling, so every call is a no-op there.
 
 const CHANNEL_PREFIX = 'class-reminders';
 const PREFIX = 'classflow-reminder:';
 
 type Notifications = typeof import('expo-notifications');
-type Look = Pick<ReminderSettings, 'sound' | 'vibration'>;
+type Look = Pick<ReminderSettings, 'sound' | 'vibration'> & Partial<Pick<ReminderSettings, 'customSound'>>;
 let loaded: Promise<Notifications | null> | null = null;
 
 function notifications() {
@@ -24,7 +27,10 @@ function notifications() {
   return loaded;
 }
 
-const soundFile = (look: Look) => look.sound === 'none' ? null : look.sound === 'default' ? 'default' : `${look.sound}.wav`;
+// Notification channels can only use bundled tones, so a custom tone falls back to the system sound there.
+const soundFile = (look: Look) => look.sound === 'none' ? null : look.sound === 'default' || look.sound === 'custom' ? 'default' : `${look.sound}.wav`;
+/** What the native player rings: a bundled tone's name, 'default', 'none', or the custom file's URI. */
+const ringTone = (look: Look) => look.sound === 'custom' ? look.customSound?.uri ?? 'class_bell' : look.sound;
 
 /**
  * Android fixes a channel's sound and vibration once it is created, so each
@@ -67,29 +73,29 @@ const content = (look: Look, title: string, body: string) => ({
   title, body, sound: soundFile(look) ?? false, vibrate: vibrationPattern(look.vibration) ?? undefined, data: { kind: 'class-reminder' },
 });
 
-/** Android alarm clock mode is available (native module linked, i.e. not iOS / web / an old build). */
+/** Android rings reminders itself (native module linked, i.e. not iOS / web / an old build). */
 export const alarmsSupported = () => Platform.OS === 'android' && !!ClassAlarm;
 /** Android 12 needs the 「闹钟和提醒」 access for exact alarms; later versions grant it at install. */
 export const alarmsExact = () => ClassAlarm?.canScheduleExact() ?? false;
 export const openAlarmAccessSettings = () => ClassAlarm?.openExactAlarmSettings();
-/** Silence an alarm that is ringing (called when the app comes to the front). */
+/** Silence a reminder that is ringing (called when the app comes to the front). */
 export const stopAlarmRinging = () => { try { ClassAlarm?.stopRinging(); } catch { /* not ringing */ } };
 
 /**
- * Replace every pending class reminder. With alarm mode on, the ones due within 24 hours become
- * alarms and the rest notifications; with it off, the alarms this app made are all removed.
- * Only this app's own alarms are ever touched.
+ * Replace every pending class reminder with the given ones (the coming week). Runs whenever the
+ * app opens or the timetable / settings change, so what is set always matches the timetable.
+ * On Android they all ring through ClassFlow's own alarms; scheduled notifications from older
+ * versions are cleared. Only this app's own alarms are ever touched.
  */
-export async function syncReminders(reminders: Reminder[], settings: Look & Pick<ReminderSettings, 'alarm'>) {
-  const useAlarms = settings.alarm && alarmsSupported();
-  const { alarms, notifications: notified } = splitAlarms(reminders, new Date(), useAlarms);
-  if (ClassAlarm) {
+export async function syncReminders(reminders: Reminder[], look: Look) {
+  if (alarmsSupported()) {
     try {
-      if (useAlarms) ClassAlarm.sync(JSON.stringify(alarms.map(item => ({ id: item.id, at: item.fireAt.getTime(), title: item.title, body: item.body }))), settings.sound, vibrationPattern(settings.vibration) ?? []);
-      else ClassAlarm.cancelAll();
-    } catch { /* keep notifications working even if the alarm side fails */ }
+      ClassAlarm!.sync(JSON.stringify(reminders.map(item => ({ id: item.id, at: item.fireAt.getTime(), title: item.title, body: item.body }))), ringTone(look), vibrationPattern(look.vibration) ?? []);
+      await syncNotifications([], look);
+      return;
+    } catch { /* fall back to plain notifications if the native side fails */ }
   }
-  await syncNotifications(notified, settings);
+  await syncNotifications(reminders, look);
 }
 
 async function syncNotifications(reminders: Reminder[], look: Look) {
@@ -109,11 +115,11 @@ async function syncNotifications(reminders: Reminder[], look: Look) {
 }
 
 /** A sample reminder a few seconds from now, to hear and feel the chosen sound and vibration. */
-export async function sendTestReminder(look: Look & Partial<Pick<ReminderSettings, 'alarm'>>): Promise<boolean> {
+export async function sendTestReminder(look: Look): Promise<boolean> {
   const module = await notifications();
   if (!module || !(await requestReminderPermission())) return false;
-  if (look.alarm && alarmsSupported()) {
-    ClassAlarm!.test(3, '测试闹钟 · 10 分钟后上课', '这是闹钟响铃的样子：静音时也会响，点「停止」结束', look.sound, vibrationPattern(look.vibration) ?? []);
+  if (alarmsSupported()) {
+    ClassAlarm!.test(3, '测试提醒 · 10 分钟后上课', '上课提醒就是这样：静音时也会响，点「停止」结束', ringTone(look), vibrationPattern(look.vibration) ?? []);
     return true;
   }
   const channelId = await prepareChannel(module, look);

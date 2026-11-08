@@ -257,7 +257,7 @@ test('class reminders fire before each session and skip back-to-back ones', asyn
   // A week ahead at most, and the next Thursday repeats.
   assert.ok(plan.every(item => item.fireAt.getTime() - now.getTime() < 9 * 864e5));
   assert.ok(plan.some(item => item.id === 'a@2026-11-12'));
-  assert.deepEqual(restoreReminders({ enabled: true, lead: 7, gap: 45, plans: 'x', sound: 'chime', vibration: 'loud' }), { enabled: true, lead: 10, gap: 45, plans: false, sound: 'chime', vibration: 'long', alarm: false });
+  assert.deepEqual(restoreReminders({ enabled: true, lead: 7, gap: 45, plans: 'x', sound: 'chime', vibration: 'loud' }), { enabled: true, lead: 10, gap: 45, plans: false, sound: 'chime', vibration: 'long', customSound: null });
   const { vibrationPattern } = await import('../src/domain/reminders.ts');
   assert.equal(vibrationPattern('none'), null);
   const long = vibrationPattern('long')!;
@@ -367,4 +367,21 @@ test('custom presets carry the wallpaper and the card pictures', async () => {
   const old = restoreAppearance(JSON.stringify({ presets: [{ id: 'custom:old', name: '旧', uiStyle: 'glass' }] })).presets[0];
   assert.equal(old.cardImages, undefined);
   assert.equal(applyPreset(changed, old).cardImages['title:高等数学'], 'file:///images/card-a.jpg');
+});
+
+test('the old alarm-mode switch is dropped: every reminder now rings the same way', async () => {
+  const { defaultReminders, restoreReminders } = await import('../src/domain/reminders.ts');
+  const restored = restoreReminders({ ...defaultReminders(), enabled: true, alarm: true });
+  assert.equal('alarm' in restored, false);
+  assert.equal(restored.enabled, true);
+});
+
+test('a custom ringtone is kept only with its file; without one the bell is used', async () => {
+  const { restoreReminders, RINGTONE_EXTENSIONS } = await import('../src/domain/reminders.ts');
+  const tone = { uri: 'file:///data/user/0/app/files/ringtones/ringtone-1.mp3', name: '我的铃声' };
+  assert.deepEqual(restoreReminders({ sound: 'custom', customSound: tone }).customSound, tone);
+  assert.equal(restoreReminders({ sound: 'custom', customSound: tone }).sound, 'custom');
+  assert.equal(restoreReminders({ sound: 'custom' }).sound, 'class_bell');
+  assert.equal(restoreReminders({ sound: 'custom', customSound: { uri: 'https://x/a.mp3', name: 'a' } }).sound, 'class_bell');
+  for (const format of ['mp3', 'm4a', 'ogg', 'wav', 'flac']) assert.ok(RINGTONE_EXTENSIONS.includes(format));
 });

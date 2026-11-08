@@ -7,7 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { describeOccurrence, formatTime, type Entry, type Occurrence } from '../domain/schedule';
 import { Button, haptic, Icon, PRESS_DELAY, useAccessibility, useTapGuard, useUI } from '../ui/primitives';
 import { metrics, springs, useTheme } from '../ui/theme';
-import { Backdrop, GlassFill, fontFamily, useGlass, useScreenOffset } from '../ui/glass';
+import { GlassFill, fontFamily, useGlass, useScreenOffset } from '../ui/glass';
 import { STACK, anchoredIndex, settleIndex, stackPose } from '../ui/stackMath';
 
 const RATIO = 1.45;       // close to bank card proportions, a little taller for text
@@ -173,7 +173,7 @@ export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen,
         }}>
         {cardWidth > 0 && items.map((item, index) => index >= active - STACK.MAX_DEPTH - 2 && index <= active + below + 1 && <StackCard key={keyOf(item)}
           item={item} now={now} image={imageFor?.(item.entry)} index={index} position={position} step={stepPx} width={cardWidth} height={cardHeight} left={left}
-          front={index === active} interactive={index >= active - STACK.MAX_DEPTH} glass={!reduceTransparency} frosted={Math.abs(index - active) <= 1} frame={{ x: stage.offset.x + left, y: stage.offset.y }}
+          front={index === active} interactive={index >= active - STACK.MAX_DEPTH} glass={!reduceTransparency}
           onPress={() => {
             if (Date.now() < suppressPress.current) return;
             if (index !== active) goTo(index); else haptic('light');
@@ -193,10 +193,9 @@ export const UpNextStack = React.memo(function UpNextStack({ items, now, onOpen,
   </View>;
 });
 
-function StackCard({ item, now, image, index, position, step, width, height, left, front, interactive, glass, frosted, frame, onPress, onLongPress }: {
+function StackCard({ item, now, image, index, position, step, width, height, left, front, interactive, glass, onPress, onLongPress }: {
   item: Occurrence; now: Date; image?: { uri: string; frost: boolean }; index: number; position: SharedValue<number>; step: number; width: number; height: number; left: number;
-  /** Only the front card and its neighbours draw the blurred page copy: one full-screen bitmap per card was the costliest thing on screen. */
-  front: boolean; interactive: boolean; glass: boolean; frosted: boolean; frame: { x: number; y: number }; onPress: () => void; onLongPress: () => void;
+  front: boolean; interactive: boolean; glass: boolean; onPress: () => void; onLongPress: () => void;
 }) {
   const { entry } = item;
   const info = describeOccurrence(item, now);
@@ -215,8 +214,6 @@ function StackCard({ item, now, image, index, position, step, width, height, lef
   });
   // The whole card fades as one layer (see needsOffscreenAlphaCompositing below).
   const fade = useAnimatedStyle(() => ({ opacity: stackPose(index - position.get(), index, step).opacity }));
-  // The frosted backdrop moves against the card so the glass stays lined up with the page behind it.
-  const backdrop = useAnimatedStyle(() => ({ transform: [{ translateY: -stackPose(index - position.get(), index, step).translateY }] }));
   const press = useAnimatedStyle(() => ({ transform: [{ scale: squish.get() }] }));
   const shade = useAnimatedStyle(() => ({ opacity: stackPose(index - position.get(), index, step).shade }));
   const content = useAnimatedStyle(() => ({ opacity: stackPose(index - position.get(), index, step).content }));

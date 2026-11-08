@@ -38,7 +38,7 @@ npm run preview:web
 
 ## 3. 当前实现和关键文件
 
-当前版本为 0.1.22 / Android versionCode 24，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
+当前版本为 0.1.23 / Android versionCode 25，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
 
 已实现课表概览、周 / 日时间画布、课程与个人安排的增删改、拖动和时长调整、冲突提示、撤销、本地保存、JSON 备份、学期设置、CSV / HTML / JSON 导入和原生学校浏览器。支持浅色 / 深色与响应式布局。“拍照翻译”目前只是未来功能入口。
 
@@ -64,7 +64,7 @@ npm run preview:web
 
 未采用：PR 中的周视图空档折叠横条（按用户要求移除，节次排列已足够）、通知提醒（`expo-notifications` 新实现）和 `preferences.periods` 作息，因为 0.1.11 / 0.1.12 已有更完整的提醒与节次实现；PR 根目录的 `.patch` 文件与该提交内容相同，未收入。
 
-尚未真机验证：铃声闹钟（各厂商系统对前台服务和闹钟音量的处理、重启后重排）、视频壁纸（WebView 读取本地文件、自动播放、与 Android 模糊层叠加）、GIF 动画、拖框取景手势、内联面板的返回键与键盘避让、引导页权限请求。
+尚未真机验证：上课提醒响铃（各厂商系统对前台服务和闹钟音量的处理、重启后重排）、视频壁纸（WebView 读取本地文件、自动播放、与 Android 模糊层叠加）、GIF 动画、拖框取景手势、内联面板的返回键与键盘避让、引导页权限请求。
 
 近期修复：学校页面改写 `Array.prototype.filter` 引起的读取失败；网格与隐藏列表重复识别；合并行星期和节次继承；注释误认课程；分段单双周；首次启动空白和旧示例迁移；部分勾选时的覆盖导入规则。不要重新引入这些问题。
 
