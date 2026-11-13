@@ -11,7 +11,7 @@ import { PIXEL, frost, pixelShadow, pixelize, useGlass } from '../ui/glass';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
-import { hainnu } from '../features/schools';
+import { SEARCH_ENGINES, TIMETABLE_SYSTEMS, hainnu, openSchool, searchUrl, type SearchEngine } from '../features/schools';
 import { version as APP_VERSION } from '../../package.json';
 import { GAP_LEVELS, LEAD_LEVELS, SOUNDS, VIBRATIONS } from '../domain/reminders';
 import { alarmsExact, alarmsSupported, openAlarmAccessSettings } from '../services/notifications';
@@ -409,17 +409,30 @@ export function ImportSheet({ closingRequested = false, semesterWeeks, demo, exi
   const [timeSource, setTimeSource] = useState('');
   const [timeEditorOpen, setTimeEditorOpen] = useState(false);
   const [timeDraft, setTimeDraft] = useState<SectionTime[]>([]);
+  // Public build: search for any school first; the verified 海南师大 adapter
+  // stays available as a fixed-domain option.
+  const [schoolId, setSchoolId] = useState<'open' | 'hainnu'>('open');
+  const [schoolQuery, setSchoolQuery] = useState('');
+  const [engine, setEngine] = useState<SearchEngine>('baidu');
+  const [browserStart, setBrowserStart] = useState(() => searchUrl(''));
+  const school = schoolId === 'open' ? openSchool : hainnu;
+  function openBrowser() {
+    setBrowserStart(searchUrl(schoolQuery, engine));
+    setBrowserOpen(true);
+  }
   function receiveTimetable(data: TimetableCapture) {
     setBrowserOpen(false);
-    const resolved = resolveSchoolPeriodTimes(data, hainnu);
+    const resolved = resolveSchoolPeriodTimes(data, school);
+    const required = requiredSectionTimes(resolved.capture);
     setCapture(resolved.capture);
     setTimeSource(resolved.source);
-    setTimeDraft(requiredSectionTimes(resolved.capture));
-    setTimeEditorOpen(false);
+    setTimeDraft(required);
+    // Unknown class times are never guessed: show the editor right away.
+    setTimeEditorOpen(required.some(time => !time.start || !time.end));
     setTab('school');
     setError('');
     try {
-      showPreview(normalizeZhengfang(resolved.capture, resolved.capture.periodTimes, semesterWeeks, hainnu.id), data.term || hainnu.name);
+      showPreview(normalizeZhengfang(resolved.capture, resolved.capture.periodTimes, semesterWeeks, school.id), data.term || (schoolId === 'open' ? schoolQuery.trim() || '学校教务' : hainnu.name));
     } catch (error) {
       showPreview(null);
       setError(error instanceof Error ? error.message : '时间识别失败，请重新打开教务课表识别');
@@ -430,9 +443,9 @@ export function ImportSheet({ closingRequested = false, semesterWeeks, demo, exi
     try {
       if (timeDraft.some(time => !time.start.trim() || !time.end.trim())) throw new Error('请补全每一节的开始和结束时间。');
       const next = { ...capture, periodTimes: timeDraft.map(time => ({ ...time, start: time.start.trim(), end: time.end.trim() })) };
-      const preview = normalizeZhengfang(next, next.periodTimes, semesterWeeks, hainnu.id);
+      const preview = normalizeZhengfang(next, next.periodTimes, semesterWeeks, school.id);
       setCapture(next); setTimeSource('已使用你核对后的作息时间'); setTimeEditorOpen(false); setError('');
-      showPreview(preview, next.term || hainnu.name);
+      showPreview(preview, next.term || (schoolId === 'open' ? schoolQuery.trim() || '学校教务' : hainnu.name));
     } catch (error) { setError(error instanceof Error ? error.message : '请检查作息时间'); }
   }
   function showPreview(preview: ImportResult | null, name = '') {
@@ -490,7 +503,7 @@ export function ImportSheet({ closingRequested = false, semesterWeeks, demo, exi
     const failure = onImport(selected, shouldReplace, preferences);
     if (failure) setError(failure);
   }
-  if (browserOpen) return <SchoolBrowser school={hainnu} onClose={() => setBrowserOpen(false)} onCapture={receiveTimetable} />;
+  if (browserOpen) return <SchoolBrowser school={school} startUrl={browserStart} engine={engine} onClose={() => setBrowserOpen(false)} onCapture={receiveTimetable} />;
   return <Sheet closingRequested={closingRequested} title="导入课表" subtitle="选择导入来源，再核对课程、时间和周次。" notice={error} onClose={onClose} stableHeight footer={close => <View style={styles.footerActions}>
     <Button variant="ghost" small onPress={close}>关闭</Button>
     {result && <Button icon="check" variant="primary" small disabled={importDisabled} onPress={confirmImport}>
@@ -500,15 +513,23 @@ export function ImportSheet({ closingRequested = false, semesterWeeks, demo, exi
     <Choices<'school' | 'file'> label="导入方式" value={tab} onChange={changeTab}
       items={[{ key: 'school', title: '学校教务', icon: 'school' }, { key: 'file', title: '课表文件', icon: 'file' }]} />
     {tab === 'school' ? <Reveal key="school" style={styles.group}>
-      <View style={styles.school}>
+      {!capture && <Choices<'open' | 'hainnu'> label="学校" value={schoolId} onChange={value => { setSchoolId(value); setError(''); }}
+        items={[{ key: 'open', title: '搜索我的学校', icon: 'globe' }, { key: 'hainnu', title: hainnu.name, icon: 'school' }]} />}
+      {schoolId === 'open' ? <View style={styles.group}>
+        {!capture && <>
+          <Field label="学校名称（可留空，在浏览器里再搜）" value={schoolQuery} onChange={setSchoolQuery} placeholder="例如：某某大学" />
+          <Choices<SearchEngine> label="搜索引擎" value={engine} onChange={setEngine} items={SEARCH_ENGINES} />
+        </>}
+        <Text style={ui.label}>可识别：{TIMETABLE_SYSTEMS.join('、')}等常见教务系统。请认准学校官方网址，搜索结果中的广告不要登录。</Text>
+      </View> : <View style={styles.school}>
         <View style={styles.schoolLogo}><Icon name="school" size={24} color={theme.blue} /></View>
         <View style={styles.detail}>
           <Text style={styles.itemTitle}>{hainnu.name}</Text>
           <Text style={ui.label}>{hainnu.systemName} · 自动识别个人课表</Text>
         </View>
-      </View>
+      </View>}
       {!capture && !result && <View style={styles.steps}>{[
-        ['登录学校教务', '在内置浏览器中登录，进入学生个人课表。'],
+        schoolId === 'open' ? ['搜索学校教务', '内置浏览器打开搜索页，找到学校教务系统并登录。'] : ['登录学校教务', '在内置浏览器中登录，进入学生个人课表。'],
         ['自动识别课表', '选择学期并查询，自动检测课程、时间与节数。'],
         ['核对后保存', '自动生成预览，核对单双周、教室和教师后导入。'],
       ].map(([title, body], i) => <View key={title} style={styles.stepRow}>
@@ -517,8 +538,8 @@ export function ImportSheet({ closingRequested = false, semesterWeeks, demo, exi
       </View>)}</View>}
       {Platform.OS === 'web' ? <>
         <Text style={ui.body}>网页预览受浏览器跨域限制，无法读取学校登录后的课表。请在 Android / iOS App 使用内置浏览器自动导入，或在此导入课表文件。</Text>
-        <Button icon="arrow" onPress={() => { void Linking.openURL(hainnu.authUrl).catch(() => setError('暂时无法打开学校教务系统')); }}>在浏览器打开学校教务</Button>
-      </> : <Button variant="primary" icon="globe" onPress={() => setBrowserOpen(true)}>{capture ? '重新打开教务课表' : '打开内置浏览器导入'}</Button>}
+        <Button icon="arrow" onPress={() => { void Linking.openURL(schoolId === 'open' ? searchUrl(schoolQuery, engine) : hainnu.authUrl).catch(() => setError('暂时无法打开学校教务系统')); }}>{schoolId === 'open' ? '在浏览器搜索学校教务' : '在浏览器打开学校教务'}</Button>
+      </> : <Button variant="primary" icon="globe" onPress={openBrowser}>{capture ? '重新打开教务课表' : schoolId === 'open' ? '搜索并打开学校教务' : '打开内置浏览器导入'}</Button>}
       {!capture && <>
         <Button icon="file" onPress={() => changeTab('file')}>继续导入课表文件</Button>
         <Button icon="school" onPress={loadDemo}>体验教务导入演示</Button>
@@ -667,7 +688,7 @@ export function SettingsSheet({ closingRequested = false, preferences, onSave, o
     <View style={styles.school}>
       <View style={styles.schoolLogo}><Icon name="school" color={theme.blue} /></View>
       <View style={styles.detail}>
-        <Text style={styles.itemTitle}>{preferences.school}</Text>
+        <Text style={styles.itemTitle}>{preferences.school || '未设置学校'}</Text>
         <Text style={ui.label}>当前学校</Text>
       </View>
     </View>

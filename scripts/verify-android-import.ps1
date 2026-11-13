@@ -49,6 +49,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Packaged timetable observer failed browser regression tests.' }
   & node --experimental-strip-types (Join-Path $projectRoot 'tests/timetable-hainnu-browser.mjs')
   if ($LASTEXITCODE -ne 0) { throw 'Packaged timetable observer failed the real-page structure regression.' }
+  & node --experimental-strip-types (Join-Path $projectRoot 'tests/timetable-systems-browser.mjs')
+  if ($LASTEXITCODE -ne 0) { throw 'Packaged timetable observer failed the open-browser system regressions.' }
 } finally {
   $env:CLASSFLOW_OBSERVER_FILE = $previousObserver
   $env:CLASSFLOW_BROWSER = $previousBrowser

@@ -1,6 +1,6 @@
 {
   "name": "classflow",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "private": true,
   "author": "Inno-Mon Studio",
   "type": "module",
@@ -16,6 +16,7 @@
     "test:embedded": "node --experimental-strip-types tests/timetable-embedded-browser.mjs",
     "test:compat": "node --experimental-strip-types tests/timetable-compat-browser.mjs",
     "test:hainnu": "node --experimental-strip-types tests/timetable-hainnu-browser.mjs",
+    "test:systems": "node --experimental-strip-types tests/timetable-systems-browser.mjs",
     "test:canvas": "node --experimental-strip-types tests/canvas-browser.mjs",
     "test:layout": "node --experimental-strip-types tests/layout-browser.mjs",
     "test:panels": "node --experimental-strip-types tests/panels-browser.mjs",

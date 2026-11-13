@@ -1,5 +1,5 @@
 import { COLORS, createEntry, parseTime, validateEntry, type Entry, type EntryColor } from '../domain/schedule.ts';
-import { matchesSchoolUrl, type SchoolAdapter } from './schools.ts';
+import { matchesSchoolUrl, sameHost, type SchoolAdapter } from './schools.ts';
 
 export type SectionTime = { section: number; endSection?: number; start: string; end: string };
 export type CapturedCourse = {
@@ -26,7 +26,9 @@ export function parseNumberList(value: string, maximum: number): number[] {
 }
 
 export function parseZhengfangWeeks(value: string, maximum: number): number[] {
+  // 强智 writes 1-16(周) and 2-16(双周); old 正方 writes {第1-16周|单周}.
   const normalized = value.replace(/\s/g, '').replace(/[（]/g, '(').replace(/[）]/g, ')')
+    .replace(/^\{|\}$/g, '').replace(/\|/g, '').replace(/\(周\)/g, '周')
     .replace(/单周/g, '单').replace(/双周/g, '双').replace(/第/g, '')
     .replace(/[，、；;]/g, ',').replace(/[－—–~～至]/g, '-');
   const weeks = new Set<number>();
@@ -51,14 +53,25 @@ export function parseZhengfangWeeks(value: string, maximum: number): number[] {
 }
 
 export function courseSections(value: string): number[] {
-  return parseNumberList(value.replace(/[第节()（）\[\]【】]/g, ''), 30);
+  const cleaned = value.replace(/[第节()（）\[\]【】]/g, '').replace(/\s/g, '');
+  // 强智 lists every period with hyphens: 01-02-03-04 means 1, 2, 3 and 4.
+  if (/^\d+(?:-\d+){2,}$/.test(cleaned)) return parseNumberList(cleaned.replace(/-/g, ','), 30);
+  return parseNumberList(cleaned, 30);
 }
 
-export function readTimetableCapture(message: string, school: SchoolAdapter): TimetableCapture | null {
+// Fixed schools accept only their configured timetable hosts. The open browser
+// accepts a capture only from the host of the page that posted it.
+function trustedSource(sourceUrl: unknown, school: SchoolAdapter, pageUrl?: string): boolean {
+  if (typeof sourceUrl !== 'string') return false;
+  if (school.mode === 'open') return !!pageUrl && sameHost(sourceUrl, pageUrl);
+  return matchesSchoolUrl(sourceUrl, school.timetableHosts);
+}
+
+export function readTimetableCapture(message: string, school: SchoolAdapter, pageUrl?: string): TimetableCapture | null {
   if (message.length > 2_000_000) throw new Error('课表内容超过 2 MB，请缩小查询范围');
   const data = JSON.parse(message);
   if (data?.type !== 'timetable') return null;
-  if (data.version !== 1 || !matchesSchoolUrl(data.sourceUrl, school.timetableHosts)
+  if (data.version !== 1 || !trustedSource(data.sourceUrl, school, pageUrl)
     || !Array.isArray(data.courses) || data.courses.length > 1000
     || !Array.isArray(data.periodTimes) || data.periodTimes.length > 30
     || typeof data.term !== 'string' || data.term.length > 200

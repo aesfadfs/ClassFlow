@@ -201,7 +201,7 @@ export function emptyState(now = new Date()): ScheduleState {
   semester.setDate(semester.getDate() - dayOfWeek(semester));
   return {
     version: 1, demo: false,
-    preferences: { semesterStart: dateKey(semester), semesterWeeks: 20, school: '海南师范大学' },
+    preferences: { semesterStart: dateKey(semester), semesterWeeks: 20, school: '' },
     entries: [],
   };
 }

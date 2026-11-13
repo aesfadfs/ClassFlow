@@ -38,7 +38,7 @@ npm run preview:web
 
 ## 3. 当前实现和关键文件
 
-当前版本为 0.1.23 / Android versionCode 25，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
+当前版本为 0.1.24 / Android versionCode 26，包名 `app.classflow.mobile`。主要技术版本来自 `package.json`：Expo 56、React Native 0.85、React 19.2.3、TypeScript 5.9。
 
 已实现课表概览、周 / 日时间画布、课程与个人安排的增删改、拖动和时长调整、冲突提示、撤销、本地保存、JSON 备份、学期设置、CSV / HTML / JSON 导入和原生学校浏览器。支持浅色 / 深色与响应式布局。“拍照翻译”目前只是未来功能入口。
 
@@ -53,7 +53,7 @@ npm run preview:web
 | `src/components/SchoolBrowser.tsx` / `.web.tsx` | 原生 WebView 与 Web 替代入口 |
 | `src/features/timetableBrowserScript.ts` | 页面检测、DOM / iframe / XHR / fetch 课表读取 |
 | `src/features/zhengfang.ts` | 正方字段、周次、节次、作息标准化 |
-| `src/features/schools.ts` | 学校域名与桂林洋校区作息配置 |
+| `src/features/schools.ts` | 学校域名、桂林洋校区作息、公开版「搜索我的学校」及搜索 / 地址工具 |
 | `src/ui/`、`src/services/files.ts` | 主题、界面基础组件、文件导入导出 |
 | `tests/`、`examples/` | 单元 / 浏览器回归与虚构或脱敏课表 |
 | `app.json`、`scripts/with-android-gradle.cjs` | Expo 配置与 Gradle 兼容插件 |
@@ -82,6 +82,7 @@ npm run test:browser
 npm run test:embedded
 npm run test:compat
 npm run test:hainnu
+npm run test:systems
 ```
 
 界面回归：先启动 `npm run build:web`、`npm run preview:web`，保持预览服务运行，再在另一个终端执行：
