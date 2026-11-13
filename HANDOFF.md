@@ -1,6 +1,6 @@
 # 课序 ClassFlow — 换电脑与开发交接说明
 
-> 2026-11-05 GitHub 协作补充：以下内容记录原迁移 ZIP。当前 GitHub 仓库跟踪 Android 工程，但不上传开发签名、构建缓存及 APK；现有 APK 从 Releases 下载。克隆后的运行、签名准备和分支协作流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。下文“无 Git 提交”“包含开发签名”等说法仅描述当时的本地迁移包。
+> GitHub 仓库补充：以下内容记录原迁移 ZIP。当前 GitHub 仓库跟踪 Android 工程，但不上传开发签名、构建缓存及 APK；现有 APK 从 Releases 下载。克隆后的运行、签名准备和分支协作流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。下文“无 Git 提交”“包含开发签名”等说法仅描述当时的本地迁移包。
 
 交接日期：2026-11-04（北京时间）。这是当前工作目录的迁移快照，包含尚未提交的全部应用源码。接手时以实际源码和配置为准。
 
@@ -122,7 +122,7 @@ powershell -File scripts/verify-android-import.ps1 -ApkPath android/app/build/ou
 
 此脚本需要 Node 和可用的 Playwright Chromium（或通过 `-BrowserPath` 指定 Edge / Chromium），会比较 APK 内识别脚本并运行兼容与海南师大结构回归。
 
-正式分发版从 0.1.8 起使用别名为 `kenshi` 的发布密钥（证书 `CN=kenshi, O=ClassFlow`）。密钥库和密码保存在仓库之外（所有者本机 `E:\ClassFlow-signing\`），通过 Gradle 用户目录的 `gradle.properties` 中 `CLASSFLOW_RELEASE_STORE_FILE`、`CLASSFLOW_RELEASE_STORE_PASSWORD`、`CLASSFLOW_RELEASE_KEY_ALIAS`、`CLASSFLOW_RELEASE_KEY_PASSWORD` 提供；没有这些属性时 release 构建回退到 `android/app/debug.keystore`，只用于本地自测。kenshi 密钥一旦丢失就无法发布可覆盖安装的更新，换电脑时须手动迁移并另行备份，绝不提交到仓库。0.1.7 及以前的安装包使用 `android/app/debug.keystore` 开发签名，与 kenshi 签名不同，从旧版换到 0.1.8 需要先导出备份、卸载再安装。
+正式分发版从 0.1.8 起使用别名为 `kenshi` 的发布密钥（证书 `CN=kenshi, O=ClassFlow`）。密钥库和密码保存在仓库之外的维护者本机，通过 Gradle 用户目录的 `gradle.properties` 中 `CLASSFLOW_RELEASE_STORE_FILE`、`CLASSFLOW_RELEASE_STORE_PASSWORD`、`CLASSFLOW_RELEASE_KEY_ALIAS`、`CLASSFLOW_RELEASE_KEY_PASSWORD` 提供；没有这些属性时 release 构建回退到 `android/app/debug.keystore`，只用于本地自测。kenshi 密钥一旦丢失就无法发布可覆盖安装的更新，换电脑时须手动迁移并另行备份，绝不提交到仓库。0.1.7 及以前的安装包使用 `android/app/debug.keystore` 开发签名，与 kenshi 签名不同，从旧版换到 0.1.8 需要先导出备份、卸载再安装。
 
 `npm run build:android` 仅验证 Android JavaScript 导出，不能生成可安装 APK。`eas.json` 保留 `preview` APK 配置，使用时需自行登录 Expo 并关联项目；包内没有迁移登录凭据。iOS 原生开发需要 macOS / Xcode 或适当的 EAS 构建环境。
 
